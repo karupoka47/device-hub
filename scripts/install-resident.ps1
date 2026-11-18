@@ -6,7 +6,12 @@ $Binary = (Resolve-Path $Binary).Path
 $Install = Join-Path $env:LOCALAPPDATA 'Programs\DeviceHub'
 New-Item -ItemType Directory -Force $Install | Out-Null
 $Target = Join-Path $Install 'device-hub.exe'
-Get-Process device-hub -ErrorAction SilentlyContinue | Stop-Process
+foreach ($Process in (Get-Process device-hub -ErrorAction SilentlyContinue)) {
+    Stop-Process -Id $Process.Id -ErrorAction Stop
+    if (-not $Process.WaitForExit(10000)) {
+        throw "Device HUB did not exit; cannot replace the running executable."
+    }
+}
 Copy-Item $Binary $Target -Force
 foreach ($License in 'LICENSE-MIT','LICENSE-APACHE','THIRD_PARTY_NOTICES.md') {
     Copy-Item (Join-Path $PSScriptRoot "..\$License") $Install -Force

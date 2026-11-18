@@ -108,6 +108,11 @@ successful memory readback alone is not proof of macro playback.
 * Held click macro: physical G7 produced 28 down / 28 up events in 1.420 s;
   physical G9 produced 32 down / 32 up events in 1.629 s, without G HUB.
 * Original profiles and SQLite settings backed up locally.
+* Release build installed with matching SHA-256; hidden background launch,
+  tray presence, second-launch activation, single-instance count and close-to-tray
+  verified. Login startup entry registered (no Windows reboot performed).
+* G HUB uninstall entry, program folder, processes, updater service and startup
+  entry absent after official uninstall; device readback still succeeds.
 
 ### G HUB desktop migration
 
