@@ -1,0 +1,143 @@
+# Logicool G502 HERO — HID++ integration
+
+## Device and transport
+
+Windows wired `046D:C08B`, interface 1, usage page `FF00`, usage `02`.
+The mouse/keyboard input collections are never opened for configuration.
+HID++ long output/input reports are 20 bytes:
+`11 FF feature-index function<<4|software-id payload[16]`.
+Feature indices are resolved through root `0000`; replies match device, feature,
+function and software ID. HID++ errors are correlated to the originating request.
+
+Observed protocol 4.2. Features used:
+
+| Feature | Functions |
+|---|---|
+| `0003` | Firmware information |
+| `2201` | DPI range (100–25600, 50 step on the tested firmware) |
+| `8100` | Profile metadata, mode, profile/DPI selection, sector reads/writes |
+
+Feature `8100` metadata: memory model 1, profile format 2, macro format 1,
+5 profiles, 11 buttons, 16 sectors, **255 bytes per sector**.
+Directory is sector 0; profiles are sectors 1–5. The driver validates that all
+five directory entries are enabled and map to sectors 1–5 before allowing edits.
+
+The final read starts at offset 239 (overlaps the preceding chunk).
+Writes use begin-write fn6 (`sector:u16be, offset:u16be, count:u16be`),
+16-byte fn7 blocks (last padded FF), then fn8. The final two bytes are
+CRC-16/CCITT-FALSE, big endian, over the preceding 253 bytes.
+Every write is read back and compared. Original sectors are saved once under
+`%APPDATA%\DeviceHub\logitech\<device-id>\original`.
+
+## Profile layout
+
+| Offset | Meaning |
+|---|---|
+| 0 | Report interval in ms (1/2/4/8) |
+| 1 / 2 | Default / DPI-shift index |
+| 3–12 | Five DPI values, little endian, zero terminates |
+| 32–75 | 11 normal button bindings, four bytes each |
+| 96–139 | 11 G-shift bindings |
+| 160–207 | UTF-16LE name, at most 24 code units |
+| 208 onward | Existing lighting data (preserved) |
+| 253–254 | CRC |
+
+Only edited fields and CRC are changed; all other bytes are retained.
+Both layers must retain a left-click binding. Profile and physical DPI changes
+are observed every 750 ms and forwarded to the UI.
+An explicitly selected profile is remembered in `selected-profile.json` and
+reselected when the driver opens in onboard mode.
+
+Button forms: `80 01 mask:u16be` mouse; `80 02 modifiers key` keyboard;
+`80 03 usage:u16be` consumer; `90 special xx xx` special actions.
+Special values: 1/2 horizontal scroll, 3/4 DPI up/down, 5 DPI cycle,
+7 DPI shift, 10 profile cycle, 11 G-shift. Unknown bindings remain opaque.
+The second set of 11 slots is shown as “Gシフト: …”; the UI uses capabilities.
+
+## Onboard macros
+
+Ten shared macro slots map to sectors 6–15, offset 0; bindings use
+`00 sector 00 00`. Unknown/noncanonical existing programs cannot be overwritten.
+All five profiles are checked before deleting or changing a shared binding mode.
+Names are local metadata in `macros.json`; actual execution is in mouse firmware.
+
+Independent format-1 codec:
+
+* `41/42 mask:u16be`: mouse down/up
+* `43/44 modifiers key`: keyboard down/up
+* `40 delay:u16be`: delay in ms
+* `02`: repeat from start while held
+* `FF`: end
+
+Supports single, held and bounded unrolled repeat. Does not advertise toggle:
+opcode `03` can create an unbounded firmware loop and is deliberately unused.
+Programs must be balanced (all pressed inputs released), at most 40 events and
+253 bytes including termination. Held loops require at least 10 ms per cycle.
+Unrecognised macros are preserved. Lua scripts and complex host-side G HUB
+sequence constructs are not executed by this driver.
+
+## Resident application
+
+Windows tray icon, close-to-tray, right-click exit, `--background`, single-instance
+activation, and icon re-registration after Explorer restart.
+`scripts/install-resident.ps1` installs per-user to
+`%LOCALAPPDATA%\Programs\DeviceHub`, adds a Start-menu shortcut and the HKCU Run
+entry. The keyboard/mouse mappings work onboard even when the app exits.
+
+## Verification commands
+
+```powershell
+python scripts/probe-logitech.py --profiles  # read-only, captures stay outside repo
+cargo test -p devhub-core -p devhub-hid --lib
+cargo run -p devhub-hid --example logitech
+cargo run -p devhub-hid --example logitech -- --verify-writes
+cargo build --release -p device-hub
+```
+
+The write check backs up memory, temporarily changes DPI/report rate and one
+binding in each layer, restores them, and compares the entire returned state.
+Physical input tests and reboot/startup checks are recorded separately; a
+successful memory readback alone is not proof of macro playback.
+
+### Hardware results (2026-11-18)
+
+* G502 HERO, firmware U1 69.00.0009, Windows x64.
+* DPI, report rate and normal/G-shift key bindings: changed, read back and
+  restored; live `2201`/`8060` values also checked.
+* Desktop import: 27 changes compared against complete readback.
+* Held click macro: physical G7 produced 28 down / 28 up events in 1.420 s;
+  physical G9 produced 32 down / 32 up events in 1.629 s, without G HUB.
+* Original profiles and SQLite settings backed up locally.
+
+### G HUB desktop migration
+
+1. `python scripts/inspect-ghub.py` creates a consistent SQLite backup using the
+   SQLite backup API, and extracts JSON into `%LOCALAPPDATA%\DeviceHub\migration`.
+2. `python scripts/import-ghub-desktop.py --profile 5` converts the active desktop
+   profile into a local Change list. It fails on unsupported assignment/sequence
+   forms rather than silently dropping them.
+3. With other configurators closed, apply using
+   `cargo run -p devhub-hid --example logitech -- --apply-json <generated-json>`.
+   Occupied macro slots are rejected, every imported field is read back, and a
+   failed write reselects the original profile.
+4. `python scripts/logitech-input-check.py` checks physical G7/G9 macro playback
+   inside a dedicated test window (no global input recording).
+
+`mouseMacro BUTTON` commands represent complete clicks; recorded `mouse.button`
+and `keyboard` entries use explicit press/release edges. For a held sequence
+ending in a zero-delay click, the converter inserts the source default delay
+(50 ms if absent) at the loop boundary and reports it, so adjacent clicks remain
+distinct. Other slots retain their original onboard configuration.
+
+## Protocol sources
+
+Field/opcode research, followed by device discovery:
+
+* https://github.com/libratbag/libratbag/blob/master/src/hidpp20.h
+* https://github.com/libratbag/libratbag/blob/master/src/hidpp20.c
+* https://github.com/cvuchener/hidpp/blob/master/profile_format.md
+* https://github.com/cvuchener/hidpp/blob/master/src/libhidpp/hidpp20/MacroFormat.cpp
+* https://openlogi.org/hidpp/features/x8100-onboard-profiles
+
+This implementation was written independently from the observed protocol fields.
+Downloaded research material and private HID/profile captures are not distributed.

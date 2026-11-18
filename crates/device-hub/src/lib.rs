@@ -21,6 +21,7 @@ pub mod overlay;
 pub mod pages;
 pub mod palette;
 pub mod prefs;
+pub mod resident;
 pub mod presets;
 pub mod procmon;
 pub use devhub_obs::rawinput;

@@ -428,7 +428,7 @@ impl AtkDriver {
             Key(_) => rec(5, 0, 0),
             Media(_) => return Err(HubError::Unsupported("media button")),
             ProfileCycle => return Err(HubError::Unsupported("profile cycle")),
-            ScrollModeToggle => return Err(HubError::Unsupported("scroll-mode toggle")),
+            ScrollModeToggle | GShift => return Err(HubError::Unsupported("scroll-mode toggle / G-shift")),
             Unsupported { .. } => return Err(HubError::Unsupported("raw action")),
         })
     }

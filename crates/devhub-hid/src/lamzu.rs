@@ -670,7 +670,7 @@ fn encode_button(a: &ButtonAction) -> HubResult<(u8, Vec<u8>)> {
         // 公式は循環パラメータ LoopUp=3 を送る。
         PollingCycle => (13, vec![3]),
         ProfileCycle => (8, vec![3]),
-        ScrollModeToggle => return Err(HubError::Unsupported("scroll-mode toggle")),
+        ScrollModeToggle | GShift => return Err(HubError::Unsupported("scroll-mode toggle / G-shift")),
         // デバイス側の未解釈割当はそのまま往復で書き戻せる。
         Unsupported { ty, params } => (*ty, params.clone()),
     })

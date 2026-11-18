@@ -570,6 +570,7 @@ impl Shell {
             ButtonActionKind::PollingCycle => "ポーリング切替",
             ButtonActionKind::ProfileCycle => "プロファイル切替",
             ButtonActionKind::ScrollModeToggle => "上下ロール切替",
+            ButtonActionKind::GShift => "Gシフト",
         };
         // 種類のチップ。
         let mut kinds_row = div().flex().flex_wrap().gap(px(6.));
@@ -916,6 +917,12 @@ impl Shell {
                     .map(|m| m.name.clone())
                     .unwrap_or_else(|| format!("スロット {}", slot + 1));
                 let times = if let MacroRun::Times(n) = run { n } else { 1 };
+                let toggle = mc.macros.as_ref().is_none_or(|c| c.button_toggle);
+                let run_labels = if toggle {
+                    vec!["回数指定".into(), "離すまで".into(), "再度押すまで".into()]
+                } else {
+                    vec!["回数指定".into(), "離すまで".into()]
+                };
                 div()
                     .flex()
                     .flex_col()
@@ -942,7 +949,7 @@ impl Shell {
                         None,
                         ui::segmented(
                             "btn-macro-run",
-                            &["回数指定".into(), "離すまで".into(), "再度押すまで".into()],
+                            &run_labels,
                             match run {
                                 MacroRun::Times(_) => 0,
                                 MacroRun::WhileHeld => 1,
@@ -1004,6 +1011,9 @@ impl Shell {
             }
             ButtonAction::ScrollModeToggle => {
                 ui::sub("ホイールの上下ロール動作を切り替えます。").into_any_element()
+            }
+            ButtonAction::GShift => {
+                ui::sub("押している間、Gシフト側のボタン割り当てを使用します。").into_any_element()
             }
             ButtonAction::Unsupported { .. } => {
                 ui::sub("このデバイスに記録されている割当は未対応の種類です。別の割当を選ぶと元には戻せません。")
@@ -1087,6 +1097,7 @@ fn default_action(k: ButtonActionKind) -> ButtonAction {
         ButtonActionKind::PollingCycle => ButtonAction::PollingCycle,
         ButtonActionKind::ProfileCycle => ButtonAction::ProfileCycle,
         ButtonActionKind::ScrollModeToggle => ButtonAction::ScrollModeToggle,
+        ButtonActionKind::GShift => ButtonAction::GShift,
     }
 }
 

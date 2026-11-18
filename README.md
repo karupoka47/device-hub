@@ -35,6 +35,7 @@ with a Liquid Glass design.
 | HTS Plus Pro (wired + 2.4GHz dongle) | All settings incl. Rapid Trigger |
 | SU66 Max (Keebforce/Everglide) | Keymap, per-key perf, lighting, macros, live travel |
 | TP55 USB DAC | Parametric EQ |
+| Logicool / Logitech G502 HERO (wired, 046D:C08B) | HID++ onboard DPI, polling, normal/G-shift bindings, five profiles, macros |
 
 Other models using the same protocols (mouse.fit report-8/EEPROM, xsyd) are
 detected automatically by capability, not by device name.
@@ -55,6 +56,16 @@ cargo test --workspace
 
 `device-hub.exe` is a single portable binary — fonts and the icon are embedded;
 settings live in `%APPDATA%\DeviceHub\`.
+
+### G HUB replacement (Windows fork)
+
+G502 HERO uses a dedicated HID++ driver. Existing onboard profiles and unknown
+fields are preserved. See [`docs/LOGITECH.md`](docs/LOGITECH.md) for protocol details,
+macro limits, G HUB migration and verification.
+
+Run `./scripts/install-resident.ps1` after a release build to install per-user,
+start at login and use the notification-area icon. Closing the window hides it;
+right-click the tray icon to exit. `--background` starts hidden.
 
 ### OBS plugin
 
@@ -135,6 +146,10 @@ UI は GPUI + Liquid Glass デザイン。
 
 HTS Plus Pro (有線+ドングル) · SU66 Max · TP55 USB DAC
 (同プロトコルの他機種も caps ベースで自動検出)
+
+このForkでは **G502 HERO（有線）** のHID++ドライバも追加。
+DPI・ポーリング・通常/Gシフト割り当て・5つの本体プロファイル・オンボードマクロに対応。
+`scripts/install-resident.ps1` でログイン時起動とトレイ常駐を設定できます。
 
 ### ビルド
 

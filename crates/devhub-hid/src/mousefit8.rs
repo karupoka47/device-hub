@@ -823,7 +823,7 @@ impl MfDongleDriver {
             }
             PollingCycle => (rec(7, 0, 0), None),
             ProfileCycle => return Err(HubError::Unsupported("profile cycle (dongle)")),
-            ScrollModeToggle => return Err(HubError::Unsupported("scroll-mode toggle")),
+            ScrollModeToggle | GShift => return Err(HubError::Unsupported("scroll-mode toggle / G-shift")),
             Unsupported { .. } => return Err(HubError::Unsupported("raw action")),
         })
     }
@@ -1379,6 +1379,7 @@ fn build_caps(info: &DeviceInfo, m: &R8Model) -> Capabilities {
             live_buttons: if m.magnetic { vec![0, 1] } else { vec![] },
             adaptive_dpi: None,
             macros: Some(MacroCaps {
+                button_toggle: true,
                 slots: 3,
                 max_events: 70,
                 max_delay_ms: 0xFFFF,

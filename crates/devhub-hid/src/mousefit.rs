@@ -622,7 +622,7 @@ fn encode_gw(action: &ButtonAction) -> HubResult<(u8, Vec<u8>)> {
         }
         PollingCycle => (13, vec![3]),
         ProfileCycle => (8, vec![3]),
-        ScrollModeToggle => return Err(HubError::Unsupported("scroll-mode toggle (GW)")),
+        ScrollModeToggle | GShift => return Err(HubError::Unsupported("scroll-mode toggle / G-shift (GW)")),
         Unsupported { .. } => return Err(HubError::Unsupported("raw action")),
     })
 }
@@ -739,7 +739,7 @@ fn encode_jm(slot: usize, action: &ButtonAction) -> HubResult<(u8, Vec<u8>)> {
         }
         PollingCycle => (7, vec![0]),
         ProfileCycle => (8, vec![3]),
-        ScrollModeToggle => return Err(HubError::Unsupported("scroll-mode toggle (JM)")),
+        ScrollModeToggle | GShift => return Err(HubError::Unsupported("scroll-mode toggle / G-shift (JM)")),
         Unsupported { .. } => return Err(HubError::Unsupported("raw action")),
     })
 }
@@ -1139,6 +1139,7 @@ fn build_caps(info: &DeviceInfo, m: &MfModel) -> Capabilities {
             live_buttons: vec![],
             adaptive_dpi: None,
             macros: Some(MacroCaps {
+                button_toggle: true,
                 slots: 3,
                 max_events: 70,
                 max_delay_ms: 0xFF_FFFF,

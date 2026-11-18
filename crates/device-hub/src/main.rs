@@ -22,6 +22,9 @@ use gpui_kit::component::{Theme, ThemeMode, TitleBar};
 use gpui_kit::*;
 
 fn main() {
+    if !device_hub::resident::single_instance() {
+        return;
+    }
     device_hub::rawinput::start(); // 実測ポーリングレート計測 (Raw Input)
     gpui_kit::application()
         .with_assets(gpui_kit::assets::AllAssets)
@@ -45,6 +48,9 @@ fn main() {
             clear_component_chrome(cx);
 
             let mut options = TitleBar::window_options();
+            let background = std::env::args().any(|a| a == "--background");
+            options.show = !background;
+            options.focus = !background;
             options.window_bounds = Some(WindowBounds::Windowed(Bounds::centered(
                 None,
                 size(px(1320.), px(840.)),
@@ -60,6 +66,7 @@ fn main() {
             }
 
             gpui_kit::open_window(options, cx, |window, cx| {
+                device_hub::resident::attach(window, cx);
                 cx.new(|cx| Shell::new(window, cx))
             })
             .expect("failed to open window");

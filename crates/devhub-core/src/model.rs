@@ -72,6 +72,8 @@ pub enum DriverKind {
     Atk,
     /// www.lamzu.net / Aurora 系 (64B feature report、if2 FFFF:00)。
     Lamzu,
+    /// Logitech / Logicool HID++ 2.0 onboard profiles.
+    Logitech,
     /// 未割り当て (検出だけできる)。
     Unsupported,
 }
@@ -469,6 +471,8 @@ pub struct MacroDef {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MacroCaps {
+    /// ボタン割当で「再度押すまで」を選べるか。
+    pub button_toggle: bool,
     /// スロット数。
     pub slots: u8,
     /// 1 本あたりの最大イベント数。
@@ -563,6 +567,8 @@ pub enum ButtonAction {
     ProfileCycle,
     /// 上下ロール (ホイール方向) の切替。
     ScrollModeToggle,
+    /// 押している間、マウスの第2ボタンレイヤーを使用する。
+    GShift,
     /// デバイスに記録されているがアプリが解釈できない割当。
     /// 表示と往復保存はできるが、新規割当の候補には出さない。
     Unsupported {
@@ -586,6 +592,7 @@ pub enum ButtonActionKind {
     PollingCycle,
     ProfileCycle,
     ScrollModeToggle,
+    GShift,
 }
 
 impl ButtonAction {
@@ -601,6 +608,7 @@ impl ButtonAction {
             ButtonAction::PollingCycle => ButtonActionKind::PollingCycle,
             ButtonAction::ProfileCycle => ButtonActionKind::ProfileCycle,
             ButtonAction::ScrollModeToggle => ButtonActionKind::ScrollModeToggle,
+            ButtonAction::GShift => ButtonActionKind::GShift,
             // 候補に出さない: 表示用に Disabled として扱う。
             ButtonAction::Unsupported { .. } => ButtonActionKind::Disabled,
         }

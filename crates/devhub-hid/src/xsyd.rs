@@ -2171,6 +2171,7 @@ fn build_caps(xs: &XsydInfo) -> Capabilities {
                 AdvancedKind::Rs,
             ],
             macros: xs.macro_space.map(|(slots, max_ev)| MacroCaps {
+                button_toggle: true,
                 slots,
                 max_events: max_ev,
                 max_delay_ms: 32767,

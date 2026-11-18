@@ -587,6 +587,7 @@ fn opts(v: &[(i64, &str)]) -> Vec<ChoiceOpt> {
 
 fn macro_caps_mouse() -> MacroCaps {
     MacroCaps {
+        button_toggle: true,
         slots: 3,
         max_events: 70,
         max_delay_ms: 65_535,
@@ -821,6 +822,7 @@ pub fn mouse_caps(wireless: bool, magnetic: bool) -> Capabilities {
                 ButtonActionKind::Macro,
                 ButtonActionKind::PollingCycle,
                 ButtonActionKind::ScrollModeToggle,
+                ButtonActionKind::GShift,
                 ButtonActionKind::Disabled,
             ],
             require_left_click: true,
@@ -1161,6 +1163,7 @@ pub fn keyboard_caps() -> Capabilities {
                 AdvancedKind::Rs,
             ],
             macros: Some(MacroCaps {
+                button_toggle: true,
                 slots: 16,
                 max_events: 128,
                 max_delay_ms: 32_768,

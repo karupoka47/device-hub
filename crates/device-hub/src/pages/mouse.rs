@@ -89,6 +89,7 @@ pub fn action_label(a: &ButtonAction, macros: &[Option<MacroDef>]) -> String {
         ButtonAction::PollingCycle => "ポーリング切替".into(),
         ButtonAction::ProfileCycle => "プロファイル切替".into(),
         ButtonAction::ScrollModeToggle => "上下ロール切替".into(),
+        ButtonAction::GShift => "Gシフト".into(),
         ButtonAction::Unsupported { ty, .. } => format!("未対応の割当 (type {ty})"),
     }
 }
