@@ -1,4 +1,12 @@
-# GPUI Device HUB
+# Deka Hub (GPUI Device HUB fork)
+
+- Fork: `karupoka47/device-hub`。Windows実行ファイルは `deka-hub.exe`。
+- G502 HERO (`046D:C08B`): `crates/devhub-hid/src/logitech.rs` / `docs/LOGITECH.md`。
+  オンボードマクロ10本 + Windows常駐PCマクロ10本（座標クリック、Esc停止）。
+- PCマクロ実行は `devhub-hid/src/pc_macro.rs`、割り当ては `logitech/host.rs`。
+  UIは `MacroCaps.coordinate_slots` で出し分ける。
+- `scripts/install-resident.ps1` で既存常駐版をDeka Hubへ更新。
+  設定・バックアップは互換性のため従来の `DeviceHub` データフォルダーを使う。
 
 ブラウザ (www.mouse.fit / hub.xsyd.top) を開きっぱなしにせずにマウス・キーボードを設定する、
 Windows 用の個人 GPUI アプリ。デザインは Liquid Glass。

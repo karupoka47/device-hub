@@ -57,7 +57,7 @@ mod platform {
                 std::ptr::without_provenance(1),
             )
         };
-        let tip = wide("Device HUB — クリックで開く / 右クリックで終了");
+        let tip = wide("Deka Hub — クリックで開く / 右クリックで終了");
         data.szTip[..tip.len()].copy_from_slice(&tip);
         data
     }
@@ -73,7 +73,7 @@ mod platform {
                 }
                 if lp as u32 == WM_RBUTTONUP || lp as u32 == WM_CONTEXTMENU {
                     let menu = CreatePopupMenu();
-                    AppendMenuW(menu, MF_STRING, 1, wide("Device HUB を開く").as_ptr());
+                    AppendMenuW(menu, MF_STRING, 1, wide("Deka Hub を開く").as_ptr());
                     AppendMenuW(menu, MF_STRING, 2, wide("終了").as_ptr());
                     let mut point: POINT = std::mem::zeroed();
                     GetCursorPos(&mut point);
@@ -92,6 +92,7 @@ mod platform {
                         show();
                     }
                     if command == 2 {
+                        devhub_hid::pc_macro::shutdown();
                         EXIT.store(true, Ordering::Relaxed);
                         Shell_NotifyIconW(NIM_DELETE, &notification(hwnd));
                         PostMessageW(MAIN.load(Ordering::Relaxed) as HWND, WM_CLOSE, 0, 0);
@@ -103,6 +104,13 @@ mod platform {
             WM_DESTROY => {
                 Shell_NotifyIconW(NIM_DELETE, &notification(hwnd));
                 PostQuitMessage(0);
+                0
+            }
+            WM_CLOSE => {
+                devhub_hid::pc_macro::shutdown();
+                EXIT.store(true, Ordering::Relaxed);
+                Shell_NotifyIconW(NIM_DELETE, &notification(hwnd));
+                PostMessageW(MAIN.load(Ordering::Relaxed) as HWND, WM_CLOSE, 0, 0);
                 0
             }
             _ => DefWindowProcW(hwnd, msg, wp, lp),

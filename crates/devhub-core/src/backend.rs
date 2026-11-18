@@ -64,6 +64,8 @@ pub type HubResult<T> = Result<T, HubError>;
 /// 何も呼ばなくても UI は 2 秒ごとの `scan` と 30 秒ごとの `battery` で動く。
 #[derive(Clone, Debug)]
 pub enum HubEvent {
+    /// A resident operation failed asynchronously.
+    RuntimeError { id: DeviceId, message: String },
     /// 挿抜。UI は `scan` し直す。
     DevicesChanged,
     /// デバイス側で設定が変わった (本体のボタンで DPI やプロファイルを変えた等)。

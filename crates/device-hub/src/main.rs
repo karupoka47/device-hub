@@ -1,4 +1,4 @@
-//! Device HUB エントリポイント。
+//! Deka Hub エントリポイント。
 //!
 //! 参照実装 (`src/main.rs`) と同じ構成:
 //!   gpui_kit::application().with_assets(AllAssets) → gpui_kit::init →
@@ -59,10 +59,10 @@ fn main() {
             options.window_min_size = Some(size(px(1040.), px(640.)));
             // 背面に回ったら描画を間引く (ゲームの邪魔をしない)。
             options.inactive_frame_interval = Some(std::time::Duration::from_millis(250));
-            options.app_id = Some("devicehub".into());
+            options.app_id = Some("dekahub".into());
             // 窓キャプション — タスクマネージャーと Alt+Tab の表示名になる。
             if let Some(tb) = options.titlebar.as_mut() {
-                tb.title = Some("Device HUB".into());
+                tb.title = Some("Deka Hub".into());
             }
 
             gpui_kit::open_window(options, cx, |window, cx| {
@@ -72,9 +72,11 @@ fn main() {
             .expect("failed to open window");
             cx.on_window_closed(|cx, _| {
                 if cx.windows().is_empty() {
+                    devhub_hid::pc_macro::shutdown();
                     cx.quit();
                 }
             })
             .detach();
         });
+    devhub_hid::pc_macro::shutdown();
 }

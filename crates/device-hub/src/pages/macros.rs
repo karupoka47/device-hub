@@ -26,6 +26,9 @@ fn event_label(e: &MacroEvent) -> String {
     match e.input {
         MacroInput::Key(u) => keys::hid_name(u),
         MacroInput::Mouse(m) => keys::mouse_fn_name(m).to_string(),
+        MacroInput::ClickAt { x, y, button } => {
+            format!("座標 ({x}, {y}) · {}", keys::mouse_fn_name(button))
+        }
     }
 }
 
@@ -43,10 +46,13 @@ impl Shell {
         let mut slots = ui::body().pt(px(4.)).gap(px(2.));
         for (i, m) in list.iter().enumerate() {
             let on = i == sel;
-            let (name, sub) = match m {
+            let (name, mut sub) = match m {
                 Some(m) => (m.name.clone(), format!("{} イベント", m.events.len())),
                 None => (format!("スロット {}", i + 1), "空".into()),
             };
+            if mcap.coordinate_slots.contains(&(i as u8)) {
+                sub = format!("PC · {sub}");
+            }
             let defined = m.is_some();
             slots = slots.child(
                 div()
@@ -106,10 +112,50 @@ impl Shell {
                     })),
             );
         }
-        let slot_card = ui::card_titled("マクロ一覧", "list-video", None)
+        let mut slot_card = ui::card_titled("マクロ一覧", "list-video", None)
             .w(px(260.))
-            .flex_none()
-            .child(slots.pb(px(14.)));
+            .flex_none();
+        if !mcap.coordinate_slots.is_empty() {
+            slot_card = slot_card.child(ui::body().child(ui::button(
+                "new-pc-macro",
+                "座標マクロを新規作成",
+                Some("plus"),
+                Btn::Primary,
+                cx,
+                |this, w, cx| {
+                    let list = macros_of(this);
+                    let slot = this.macro_caps().and_then(|c| {
+                        c.coordinate_slots
+                            .into_iter()
+                            .find(|i| list.get(*i as usize).is_some_and(Option::is_none))
+                    });
+                    let Some(slot) = slot else {
+                        this.toast("PCマクロスロットがいっぱいです", true, cx);
+                        return;
+                    };
+                    this.macro_sel = slot as usize;
+                    this.macro_event_sel = None;
+                    this.recording = None;
+                    let name = format!("座標マクロ {}", slot as usize + 1);
+                    this.macro_draft = Some(MacroDef {
+                        name: name.clone(),
+                        events: vec![],
+                        mode: 0,
+                        repeat: 1,
+                    });
+                    this.input("macro_name", "", "名前", w, cx);
+                    this.set_input("macro_name", &name, w, cx);
+                    cx.notify();
+                },
+            )));
+        }
+        let slot_card = slot_card.child(
+            div()
+                .id("macro-slot-scroll")
+                .max_h(px(620.))
+                .overflow_y_scroll()
+                .child(slots.pb(px(14.))),
+        );
 
         // ---- 編集
         if self.macro_draft.is_none() {
@@ -184,6 +230,7 @@ impl Shell {
     ) -> Div {
         let p = theme::pal();
         let recording = self.recording.is_some();
+        let pc = mcap.coordinate_slots.contains(&(slot as u8));
         let name_in = self.input("macro_name", &d.name, "名前", window, cx);
 
         // モード。
@@ -402,6 +449,43 @@ impl Shell {
             ));
         }
 
+        let mut coordinate = div().flex().flex_col().gap(px(8.));
+        if pc {
+            let x = self.input("macro_x", "0", "X", window, cx);
+            let y = self.input("macro_y", "0", "Y", window, cx);
+            let chosen = COORD_BUTTON.with(|b| b.get());
+            coordinate = coordinate
+                .child(ui::faint("PCに保存 · Deka Hub常駐中に実行 · Escで停止。座標は画面全体の物理ピクセル（負数対応）。"))
+                .child(div().flex().flex_wrap().items_center().gap(px(8.))
+                    .child(ui::sub("X")).child(div().w(px(95.)).child(Input::new(&x)))
+                    .child(ui::sub("Y")).child(div().w(px(95.)).child(Input::new(&y)))
+                    .child(ui::select("coordinate-button",
+                        keys::MOUSE_FNS[..5].iter().map(|m| PopItem::new(keys::mouse_fn_name(*m), *m == chosen)).collect(),
+                        keys::mouse_fn_name(chosen), 145., cx,
+                        |_, i, _, cx| { COORD_BUTTON.with(|b| b.set(keys::MOUSE_FNS[i])); cx.notify(); }))
+                    .child(ui::button("capture-coordinate", "3秒後の位置を取得", Some("crosshair"), Btn::Glass, cx,
+                        move |this, w, cx| {
+                            this.toast("3秒以内にクリック先へポインターを移動してください", false, cx);
+                            cx.spawn_in(w, async move |this, cx| {
+                                cx.background_executor().timer(std::time::Duration::from_secs(3)).await;
+                                let point = devhub_hid::pc_macro::cursor_position();
+                                let _ = this.update_in(cx, |this, w, cx| {
+                                    if this.macro_sel != slot { return; }
+                                    if let Some((x, y)) = point {
+                                        this.set_input("macro_x", &x.to_string(), w, cx);
+                                        this.set_input("macro_y", &y.to_string(), w, cx);
+                                        this.toast(format!("座標 ({x}, {y}) を取得しました"), false, cx);
+                                    }
+                                });
+                            }).detach();
+                        }))
+                    .child(ui::button("insert-coordinate", "座標クリックを挿入", Some("plus"), Btn::Primary, cx,
+                        |this, _, cx| this.edit_coordinate(false, cx)))
+                    .when(self.macro_event_sel.is_some_and(|i| d.events.get(i).is_some_and(|e| matches!(e.input, MacroInput::ClickAt { .. }))), |row| row.child(
+                        ui::button("update-coordinate", "選択を更新", Some("check"), Btn::Glass, cx,
+                            |this, _, cx| this.edit_coordinate(true, cx)))));
+        }
+
         // イベント列。
         let max_delay = mcap.max_delay_ms;
         let mut events = div().flex().flex_col().gap(px(2.));
@@ -454,7 +538,13 @@ impl Shell {
                     .child(div().flex_1().text_size(px(13.)).child(format!(
                         "{} {}",
                         event_label(e),
-                        if down { "押す" } else { "離す" }
+                        if matches!(e.input, MacroInput::ClickAt { .. }) {
+                            "クリック"
+                        } else if down {
+                            "押す"
+                        } else {
+                            "離す"
+                        }
                     )))
                     .child(ui::stepper_custom(
                         &format!("mev-d-{i}"),
@@ -496,12 +586,22 @@ impl Shell {
                             cx.notify();
                         },
                     ))
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                    .on_click(cx.listener(move |this, _, w, cx| {
                         this.macro_event_sel = if this.macro_event_sel == Some(i) {
                             None
                         } else {
                             Some(i)
                         };
+                        if let Some(MacroEvent {
+                            input: MacroInput::ClickAt { x, y, button },
+                            ..
+                        }) = this.macro_draft.as_ref().and_then(|d| d.events.get(i))
+                        {
+                            let (x, y, button) = (*x, *y, *button);
+                            this.set_input("macro_x", &x.to_string(), w, cx);
+                            this.set_input("macro_y", &y.to_string(), w, cx);
+                            COORD_BUTTON.with(|b| b.set(button));
+                        }
                         cx.notify();
                     })),
             );
@@ -556,7 +656,11 @@ impl Shell {
             ))
             .child(ui::button(
                 "macro-save",
-                "デバイスに保存",
+                if pc {
+                    "PCに保存"
+                } else {
+                    "デバイスに保存"
+                },
                 Some("save"),
                 Btn::Primary,
                 cx,
@@ -574,10 +678,20 @@ impl Shell {
                         // 押したまま終わるキーには離すイベントを補う。
                         let mut held: Vec<MacroInput> = vec![];
                         for e in &d.events {
+                            if matches!(e.input, MacroInput::ClickAt { .. }) {
+                                continue;
+                            }
                             match e.edge {
                                 MacroEdge::Down => held.push(e.input),
                                 MacroEdge::Up => held.retain(|h| *h != e.input),
                             }
+                        }
+                        if this
+                            .macro_caps()
+                            .is_some_and(|c| d.events.len() > c.max_events as usize)
+                        {
+                            this.toast("イベント数の上限を超えています", true, cx);
+                            return;
                         }
                         for h in held {
                             d.events.push(MacroEvent {
@@ -588,7 +702,6 @@ impl Shell {
                         }
                         this.macro_draft = Some(d.clone());
                         this.apply(Change::Macro { slot, def: Some(d) }, cx);
-                        this.toast("マクロを保存しました", false, cx);
                     }
                 },
             ));
@@ -600,11 +713,65 @@ impl Shell {
         )
         .child(props)
         .child(ui::body().gap(px(10.)).pt(px(6.)).child(insert))
+        .when(pc, |card| {
+            card.child(ui::body().pt(px(6.)).child(coordinate))
+        })
         .child(ui::body().child(events))
         .child(ui::body().pb(px(16.)).child(footer))
+    }
+
+    fn edit_coordinate(&mut self, replace: bool, cx: &mut Context<Self>) {
+        let x = self
+            .input_value("macro_x", cx)
+            .and_then(|s| s.trim().parse::<i32>().ok());
+        let y = self
+            .input_value("macro_y", cx)
+            .and_then(|s| s.trim().parse::<i32>().ok());
+        let (Some(x), Some(y)) = (x, y) else {
+            self.toast("X・Yに整数を入力してください", true, cx);
+            return;
+        };
+        if !devhub_hid::pc_macro::valid_point(x, y) {
+            self.toast("指定座標にモニターがありません", true, cx);
+            return;
+        }
+        let input = MacroInput::ClickAt {
+            x,
+            y,
+            button: COORD_BUTTON.with(|b| b.get()),
+        };
+        let max = self.macro_caps().map_or(40, |c| c.max_events as usize);
+        if let Some(d) = &mut self.macro_draft {
+            if replace {
+                if let Some(e) = self.macro_event_sel.and_then(|i| d.events.get_mut(i)) {
+                    if matches!(e.input, MacroInput::ClickAt { .. }) {
+                        e.input = input;
+                    }
+                }
+            } else {
+                if d.events.len() >= max {
+                    self.toast("イベント数の上限です", true, cx);
+                    return;
+                }
+                let at = self
+                    .macro_event_sel
+                    .map_or(d.events.len(), |i| (i + 1).min(d.events.len()));
+                d.events.insert(
+                    at,
+                    MacroEvent {
+                        input,
+                        edge: MacroEdge::Down,
+                        delay_ms: 50,
+                    },
+                );
+                self.macro_event_sel = Some(at);
+            }
+        }
+        cx.notify();
     }
 }
 
 thread_local! {
+    static COORD_BUTTON: std::cell::Cell<MouseFn> = const { std::cell::Cell::new(MouseFn::Left) };
     static REC_MODE: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
 }

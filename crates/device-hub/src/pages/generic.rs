@@ -341,7 +341,7 @@ impl Shell {
                         let exts: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
                         let dlg = rfd::FileDialog::new().add_filter("file", &exts);
                         let picked = if a.save {
-                            dlg.set_file_name("device-hub-config.json").save_file()
+                            dlg.set_file_name("deka-hub-config.json").save_file()
                         } else {
                             dlg.pick_file()
                         };

@@ -11,6 +11,6 @@ fn main() {
     // GPUI の大きなビュー関数はデバッグビルドで既定の 1MB スタックを溢れ得る
     // (参照実装で設定ページの `stack overflow` 実績あり)。メインスレッド予約を広げる。
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
-        println!("cargo:rustc-link-arg-bin=device-hub=/STACK:16777216");
+        println!("cargo:rustc-link-arg-bin=deka-hub=/STACK:16777216");
     }
 }

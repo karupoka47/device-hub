@@ -24,6 +24,7 @@ pub mod atk;
 pub mod lamzu;
 #[doc(hidden)]
 pub mod logitech;
+pub mod pc_macro;
 #[allow(dead_code)]
 mod mousefit;
 mod mousefit8;

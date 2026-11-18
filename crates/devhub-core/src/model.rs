@@ -442,6 +442,9 @@ pub enum MacroInput {
     /// HID usage (keyboard page)。修飾キーも usage (0xE0..0xE7) で表す。
     Key(u16),
     Mouse(MouseFn),
+    /// Complete host-side click at physical virtual-desktop pixels (negative X/Y allowed).
+    /// Always uses Down; no matching Up event is needed.
+    ClickAt { x: i32, y: i32, button: MouseFn },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -471,6 +474,8 @@ pub struct MacroDef {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MacroCaps {
+    /// PC-persisted slots that support ClickAt and require the resident app.
+    pub coordinate_slots: Vec<u8>,
     /// ボタン割当で「再度押すまで」を選べるか。
     pub button_toggle: bool,
     /// スロット数。

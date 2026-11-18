@@ -887,7 +887,7 @@ impl Hub {
                 }
                 if self.fw_native {
                     let _ = notify_rust::Notification::new()
-                        .summary("Device HUB")
+                        .summary("Deka Hub")
                         .body(&format!("{name} の新しいファームウェアが公開されています"))
                         .show();
                 }
@@ -898,6 +898,7 @@ impl Hub {
             }
             Msg::Event(ev) => {
                 match ev {
+                    HubEvent::RuntimeError { message, .. } => return Some((message, true)),
                     HubEvent::DevicesChanged => self.scan(),
                     HubEvent::StateChanged(id) => self.reload_inner(&id, false),
                     HubEvent::Battery(id, b) => {

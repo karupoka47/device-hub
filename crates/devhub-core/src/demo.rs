@@ -587,6 +587,7 @@ fn opts(v: &[(i64, &str)]) -> Vec<ChoiceOpt> {
 
 fn macro_caps_mouse() -> MacroCaps {
     MacroCaps {
+        coordinate_slots: vec![],
         button_toggle: true,
         slots: 3,
         max_events: 70,
@@ -1163,6 +1164,7 @@ pub fn keyboard_caps() -> Capabilities {
                 AdvancedKind::Rs,
             ],
             macros: Some(MacroCaps {
+                coordinate_slots: vec![],
                 button_toggle: true,
                 slots: 16,
                 max_events: 128,

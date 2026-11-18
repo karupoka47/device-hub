@@ -265,7 +265,7 @@ impl Shell {
                 .pb(px(14.))
                 .gap(px(6.))
                 .pt(px(4.))
-                .child(ui::sub(format!("Device Hub {}", env!("CARGO_PKG_VERSION"))))
+                .child(ui::sub(format!("Deka Hub {}", env!("CARGO_PKG_VERSION"))))
                 .child(ui::faint("mouse.fit / hub.xsyd.top の設定をブラウザなしで行うための個人用ツール。GPUI + Liquid Glass。"))
                 .child(ui::faint("新しいデバイスの追加方法: docs/ADD_DEVICE.md")),
         );

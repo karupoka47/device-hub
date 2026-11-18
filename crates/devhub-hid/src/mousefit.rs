@@ -823,10 +823,11 @@ fn decode_jm(ty: u8, ctx: &[u8]) -> ButtonAction {
 // ==================================================================== マクロ変換
 
 /// MacroDef.events → mouse.fit イベントバイト列 (ec() 相当)。
-fn encode_macro(def: &MacroDef) -> Vec<u8> {
+fn encode_macro(def: &MacroDef) -> HubResult<Vec<u8>> {
     let mut out = Vec::new();
     for ev in &def.events {
         match ev.input {
+            MacroInput::ClickAt { .. } => return Err(HubError::Unsupported("座標クリック")),
             MacroInput::Key(u) if (0xE0..=0xE7).contains(&u) => {
                 let bit = 1u8 << (u - 0xE0);
                 out.extend_from_slice(&[if ev.edge == MacroEdge::Down { 9 } else { 10 }, bit]);
@@ -858,7 +859,7 @@ fn encode_macro(def: &MacroDef) -> Vec<u8> {
             push_delay(&mut out, ev.delay_ms);
         }
     }
-    out
+    Ok(out)
 }
 
 fn push_delay(out: &mut Vec<u8>, ms: u32) {
@@ -1139,6 +1140,7 @@ fn build_caps(info: &DeviceInfo, m: &MfModel) -> Capabilities {
             live_buttons: vec![],
             adaptive_dpi: None,
             macros: Some(MacroCaps {
+                coordinate_slots: vec![],
                 button_toggle: true,
                 slots: 3,
                 max_events: 70,
@@ -1408,7 +1410,7 @@ impl DeviceDriver for MousefitDriver {
                 match def {
                     None => self.macro_delete(id),
                     Some(d) => {
-                        let data = encode_macro(d);
+                        let data = encode_macro(d)?;
                         if data.is_empty() {
                             self.macro_delete(id)
                         } else {
@@ -1668,7 +1670,7 @@ mod tests {
                 },
             ],
         };
-        let data = encode_macro(&def);
+        let data = encode_macro(&def).unwrap();
         assert_eq!(data, vec![9, 1, 2, 4, 32, 50, 3, 4, 33, 1, 44, 1, 1, 1, 0]);
         let back = decode_macro(&data);
         assert_eq!(back, def.events);

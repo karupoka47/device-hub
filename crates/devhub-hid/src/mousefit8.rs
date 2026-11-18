@@ -939,6 +939,7 @@ impl MfDongleDriver {
         let mut a = vec![def.events.len().min(70) as u8];
         for ev in def.events.iter().take(70) {
             let (ty, value, edge) = match ev.input {
+                MacroInput::ClickAt { .. } => return Err(HubError::Unsupported("座標クリック")),
                 MacroInput::Key(u) if (0xE0..=0xE7).contains(&u) => {
                     (9, 1u16 << (u - 0xE0), ev.edge)
                 }
@@ -1379,6 +1380,7 @@ fn build_caps(info: &DeviceInfo, m: &R8Model) -> Capabilities {
             live_buttons: if m.magnetic { vec![0, 1] } else { vec![] },
             adaptive_dpi: None,
             macros: Some(MacroCaps {
+                coordinate_slots: vec![],
                 button_toggle: true,
                 slots: 3,
                 max_events: 70,

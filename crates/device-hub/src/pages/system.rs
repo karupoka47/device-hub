@@ -227,7 +227,7 @@ impl Shell {
                             };
                             let file = rfd::FileDialog::new()
                                 .set_file_name(format!("{}.devhub.json", name.replace(' ', "_")))
-                                .add_filter("Device Hub", &["json"])
+                                .add_filter("Deka Hub", &["json"])
                                 .save_file();
                             if let Some(f) = file {
                                 match serde_json::to_string_pretty(&st)
@@ -256,7 +256,7 @@ impl Shell {
                         cx,
                         |this, _, cx| {
                             let Some(f) = rfd::FileDialog::new()
-                                .add_filter("Device Hub", &["json"])
+                                .add_filter("Deka Hub", &["json"])
                                 .pick_file()
                             else {
                                 return;

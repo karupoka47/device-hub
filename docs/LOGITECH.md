@@ -16,6 +16,7 @@ Observed protocol 4.2. Features used:
 | `0003` | Firmware information |
 | `2201` | DPI range (100–25600, 50 step on the tested firmware) |
 | `8100` | Profile metadata, mode, profile/DPI selection, sector reads/writes |
+| `8110` | Physical button count, spy start/stop and button-mask notifications |
 
 Feature `8100` metadata: memory model 1, profile format 2, macro format 1,
 5 profiles, 11 buttons, 16 sectors, **255 bytes per sector**.
@@ -76,13 +77,43 @@ Programs must be balanced (all pressed inputs released), at most 40 events and
 Unrecognised macros are preserved. Lua scripts and complex host-side G HUB
 sequence constructs are not executed by this driver.
 
+## PC coordinate macros
+
+Windows adds PC slots 11–20 (zero-based 10–19); native slots 1–10 keep their
+original storage and codecs. `MacroCaps.coordinate_slots` drives the UI.
+`MacroInput::ClickAt { x, y, button }` is one complete click (`edge: Down`),
+followed by `delay_ms`; it never needs an additional release event.
+Definitions and per-profile/per-layer button bindings are atomically persisted in
+`%APPDATA%\DeviceHub\logitech\<device-id>\pc-macros.json`.
+
+The onboard binding marker is `80 01 80 00` (HID mouse button 16). Windows does
+not turn that button into a standard click/key. While the app runs, `8110` fn1
+enables event 0: its first two payload bytes are a **big-endian** held-button mask.
+Verified G9 frames are `11 FF <8110-index> 00 01 00 ...` and release `00 00`.
+The mouse stays in onboard mode. This avoids fake keyboard hotkeys and allows
+native assignments to run alongside PC macros. A stopped app leaves PC bindings
+inactive. Do not copy this marker to other models without hardware verification.
+
+All command reads dispatch spy notifications; the idle reader drains every 5 ms
+under the same transport lock. Physical release is routed by button identity,
+including when G-shift changes while held. Profile changes invalidate routing.
+One serialized player per device supports single, counted and held execution.
+New playback cancels previous playback; Esc, disconnect, profile changes, edits,
+driver drop and graceful shutdown release injected holds.
+Screen clicks use a DPI-aware `SendInput` batch (virtual-desktop absolute move,
+down, up), including negative monitor origins; points outside real monitors fail.
+Playback errors are reported to the UI. Elevated targets require matching input
+permissions. Forced OS process termination cannot execute release cleanup.
+
 ## Resident application
 
 Windows tray icon, close-to-tray, right-click exit, `--background`, single-instance
 activation, and icon re-registration after Explorer restart.
 `scripts/install-resident.ps1` installs per-user to
-`%LOCALAPPDATA%\Programs\DeviceHub`, adds a Start-menu shortcut and the HKCU Run
-entry. The keyboard/mouse mappings work onboard even when the app exits.
+`%LOCALAPPDATA%\Programs\DekaHub\deka-hub.exe`, adds the **Deka Hub** Start-menu
+shortcut and HKCU Run `DekaHub` entry. Upgrading removes the old startup/shortcut
+and binary, retaining `%APPDATA%\DeviceHub` preferences and local backups.
+Native keyboard/mouse mappings work onboard even when the app exits.
 
 ## Verification commands
 
@@ -92,6 +123,8 @@ cargo test -p devhub-core -p devhub-hid --lib
 cargo run -p devhub-hid --example logitech
 cargo run -p devhub-hid --example logitech -- --verify-writes
 cargo build --release -p device-hub
+cargo build -p devhub-hid --example coordinate_check
+python scripts/coordinate-input-check.py # temporary G9 binding, restored afterward
 ```
 
 The write check backs up memory, temporarily changes DPI/report rate and one
@@ -108,11 +141,22 @@ successful memory readback alone is not proof of macro playback.
 * Held click macro: physical G7 produced 28 down / 28 up events in 1.420 s;
   physical G9 produced 32 down / 32 up events in 1.629 s, without G HUB.
 * Original profiles and SQLite settings backed up locally.
+* PC coordinate playback through physical G9: 15 left clicks at `(340,408)`,
+  13 right clicks at `(755,408)`, all 56 down/up edges at the exact targets.
+  User confirmed held-button release and Esc both stop playback.
+  Temporary PC slot and G9 assignment removed; complete device state compared
+  equal to the pre-test snapshot. Multi-monitor negative origins are implemented
+  but were not part of this physical-button test.
 * Release build installed with matching SHA-256; hidden background launch,
   tray presence, second-launch activation, single-instance count and close-to-tray
   verified. Login startup entry registered (no Windows reboot performed).
 * G HUB uninstall entry, program folder, processes, updater service and startup
   entry absent after official uninstall; device readback still succeeds.
+* Deka Hub upgrade: executable metadata, window/sidebar name, Start-menu target,
+  renamed startup entry and installed SHA-256 verified. Close-to-tray and
+  second-launch restoration keep exactly one resident process.
+  Native UI created/saved/deleted a single ClickAt event without a spurious Up.
+  Final unit suite: 61 passed; workspace Clippy has only pre-existing OBS/audio warnings.
 
 ### G HUB desktop migration
 
@@ -143,6 +187,7 @@ Field/opcode research, followed by device discovery:
 * https://github.com/cvuchener/hidpp/blob/master/profile_format.md
 * https://github.com/cvuchener/hidpp/blob/master/src/libhidpp/hidpp20/MacroFormat.cpp
 * https://openlogi.org/hidpp/features/x8100-onboard-profiles
+* https://docs.rs/openlogi-hidpp/0.8.20/src/hidpp/feature/mouse_button_spy.rs.html
 
 This implementation was written independently from the observed protocol fields.
 Downloaded research material and private HID/profile captures are not distributed.

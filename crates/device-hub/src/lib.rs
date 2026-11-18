@@ -1,4 +1,4 @@
-//! Device HUB — GPUI フロントエンド (Liquid Glass)。
+//! Deka Hub — GPUI フロントエンド (Liquid Glass)。
 //!
 //! - `app` … 窓の殻 (Shell): 状態・ルーティング・サイドバー・イベント配線
 //! - `pages/*` … 各画面 (`impl Shell`)

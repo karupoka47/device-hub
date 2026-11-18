@@ -831,7 +831,7 @@ impl Shell {
                 .child(step("1", "devhub_obs.dll を C:\\ProgramData\\obs-studio\\plugins\\devhub_obs\\bin\\64bit\\ に置いて OBS を起動"))
                 .child(step("2", "ソース追加 →「Device HUB キーボード」「Device HUB マウス」を別々に追加 (両方を 1 枚にするなら「Device HUB Live」)"))
                 .child(step("3", "見た目と表示キーはこの画面で変更 — 全ソースに即反映。ソースのプロパティ側でも表示するキー/ボタンを選べます"))
-                .child(step("4", "Device HUB 本体は閉じていても OK (OBS プラグインが直接デバイスを読みます)"))
+                .child(step("4", "Deka Hub 本体は閉じていても OK (OBS プラグインが直接デバイスを読みます)"))
                 .child(div().min_w_0().child(ui::faint(format!("設定ファイル: {path}")))),
         );
 

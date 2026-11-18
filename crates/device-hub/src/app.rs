@@ -1522,7 +1522,7 @@ impl Shell {
                                             .text_size(px(15.))
                                             .font_weight(FontWeight::BOLD)
                                             .text_color(p.fg)
-                                            .child("Device Hub"),
+                                            .child("Deka Hub"),
                                     )
                                     .child(div().text_size(px(10.5)).text_color(p.faint).child(
                                         if self.hub.demo {

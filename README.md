@@ -1,4 +1,7 @@
-# Device HUB
+# Deka Hub
+
+Personal Windows fork of [Device HUB](https://github.com/pity-zxcv/device-hub),
+with G502 HERO support and resident coordinate-click macros.
 
 A native Windows configurator for magnetic-switch keyboards, Hall-effect mice, and
 USB DACs — no browser required. Replaces keeping the vendor web configurators
@@ -54,7 +57,7 @@ cargo clippy --workspace
 cargo test --workspace
 ```
 
-`device-hub.exe` is a single portable binary — fonts and the icon are embedded;
+`deka-hub.exe` is a single portable binary — fonts and the icon are embedded;
 settings live in `%APPDATA%\DeviceHub\`.
 
 ### G HUB replacement (Windows fork)
@@ -66,6 +69,18 @@ macro limits, G HUB migration and verification.
 Run `./scripts/install-resident.ps1` after a release build to install per-user,
 start at login and use the notification-area icon. Closing the window hides it;
 right-click the tray icon to exit. `--background` starts hidden.
+
+### Coordinate-click macros (G502 HERO / Windows)
+
+Open **Macros → 座標マクロを新規作成**. Enter X/Y physical screen coordinates
+(including negative coordinates on other monitors), or capture the pointer position
+after three seconds. Choose left/right/middle/back/forward, insert the click, and
+save to PC. Assign the PC macro to a mouse button from the normal button editor.
+
+PC slots 11–20 run while Deka Hub is resident. One-shot, fixed-count and held
+playback are supported; **Esc** stops playback. A new PC macro replaces the current
+one. Profile changes, disconnection, and normal exit cancel playback and release
+injected holds. Existing onboard slots 1–10 continue to run in mouse firmware.
 
 ### OBS plugin
 
@@ -151,12 +166,19 @@ HTS Plus Pro (有線+ドングル) · SU66 Max · TP55 USB DAC
 DPI・ポーリング・通常/Gシフト割り当て・5つの本体プロファイル・オンボードマクロに対応。
 `scripts/install-resident.ps1` でログイン時起動とトレイ常駐を設定できます。
 
+**座標クリック**:「マクロ → 座標マクロを新規作成」からX/Yとボタンを指定し、
+「座標クリックを挿入 → PCに保存」。ボタン割り当て画面からそのマクロを選びます。
+「3秒後の位置を取得」も使えます。PCスロット11〜20はDeka Hub常駐中に動き、
+Escで停止します。画面左上が原点の物理ピクセル指定で、複数画面の負座標に対応します。
+
 ### ビルド
 
 ```sh
 cargo run --release -p device-hub
 ```
 
-`device-hub.exe` はフォント・アイコン埋め込みの単体バイナリです。設定は `%APPDATA%\DeviceHub\`。
+`deka-hub.exe` はフォント・アイコン埋め込みの単体バイナリです。
+互換性のため設定は引き続き `%APPDATA%\DeviceHub\` に保存します。
+インストール先は `%LOCALAPPDATA%\Programs\DekaHub`、スタートメニューは「Deka Hub」です。
 
 詳細は `docs/` と `AGENTS.md` を参照してください。

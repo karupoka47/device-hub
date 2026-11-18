@@ -2,6 +2,7 @@
 //! Read/modify/write onboard sectors, preserving unknown bytes and G-shift bindings.
 use crate::transport::Channel;
 use devhub_core::{backend::*, model::*};
+mod host;
 mod macros;
 use std::{
     collections::BTreeMap,
@@ -58,6 +59,8 @@ pub fn crc16(bytes: &[u8]) -> u16 {
 }
 
 struct Wire {
+    spy: u8,
+    host: Option<host::Host>,
     channel: Channel,
     software: u8,
     profiles: u8,
@@ -100,11 +103,7 @@ impl Wire {
                 }
                 return Ok(r[4..20].try_into().unwrap());
             }
-            if r[2] == self.profiles && r[3] & 0x0f == 0 {
-                if let Some(cb) = &self.notify {
-                    cb(HubEvent::StateChanged(self.id.clone()));
-                }
-            }
+            self.notification(&r);
         }
         Err(protocol("HID++ reply timeout"))
     }
@@ -114,6 +113,33 @@ impl Wire {
             return Err(protocol(format!("Missing HID++ feature {id:04x}")));
         }
         Ok(r[0])
+    }
+    fn notification(&mut self, r: &[u8]) {
+        if r.len() < 6 || r[1] != 0xff || !matches!(r[0], 0x10 | 0x11) {
+            return;
+        }
+        if self.spy != 0 && r[2..4] == [self.spy, 0] {
+            if let Some(host) = &mut self.host {
+                host.buttons(be(&r[4..]));
+            }
+        } else if r[2] == self.profiles && r[3] & 0x0f == 0 {
+            // Only profile notifications invalidate routing; DPI events do not stop playback.
+            if r[3] == 0 {
+                if let Some(host) = &mut self.host {
+                    host.invalidate();
+                }
+            }
+            if let Some(cb) = &self.notify {
+                cb(HubEvent::StateChanged(self.id.clone()));
+            }
+        }
+    }
+    fn refresh_host(&mut self, profile: u8) -> HubResult<()> {
+        if self.host.is_some() {
+            let bytes = self.valid_sector(profile)?;
+            self.host.as_mut().unwrap().refresh(profile, &bytes);
+        }
+        Ok(())
     }
     fn onboard(&mut self, function: u8, args: &[u8]) -> HubResult<[u8; 16]> {
         self.call(self.profiles, function, args)
@@ -193,6 +219,17 @@ impl Wire {
     }
 }
 
+impl Drop for Wire {
+    fn drop(&mut self) {
+        if let Some(host) = &mut self.host {
+            host.invalidate();
+        }
+        if self.spy != 0 {
+            let _ = self.call(self.spy, 2, &[]);
+        }
+    }
+}
+
 pub struct Logitech {
     info: DeviceInfo,
     wire: Arc<Mutex<Wire>>,
@@ -217,6 +254,8 @@ pub fn open(
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect();
     let mut wire = Wire {
+        spy: 0,
+        host: None,
         channel: Channel::open(dev, 20, 20),
         software: 12,
         profiles: 0,
@@ -313,8 +352,13 @@ pub fn open(
         ],
         require_left_click: true,
         macros: Some(MacroCaps {
+            coordinate_slots: if cfg!(windows) {
+                (10..20).collect()
+            } else {
+                vec![]
+            },
             button_toggle: false,
-            slots: 10,
+            slots: if cfg!(windows) { 20 } else { 10 },
             max_events: 40,
             max_delay_ms: 65535,
             modes: vec![
@@ -370,23 +414,64 @@ pub fn open(
             wire.select(index + 1)?;
         }
     }
+    #[cfg(windows)]
+    {
+        wire.host = Some(host::Host::load(
+            root.join(&safe_id).join("pc-macros.json"),
+            info.id.clone(),
+            wire.notify.clone(),
+        )?);
+        wire.spy = wire.feature(0x8110)?;
+        let spy = wire.spy;
+        if wire.call(spy, 0, &[])?[0] != BUTTONS as u8 {
+            return Err(protocol("Unexpected button spy layout"));
+        }
+        wire.call(spy, 1, &[])?;
+        let current = wire.current()?;
+        wire.refresh_host(current)?;
+    }
     let wire = Arc::new(Mutex::new(wire));
     // Hardware DPI/profile buttons keep working while the UI is hidden.
     // Observe them without holding the device open after the driver is dropped.
     let weak = Arc::downgrade(&wire);
     std::thread::spawn(move || {
         let mut previous = None;
+        let mut next_poll = Instant::now();
         loop {
-            std::thread::sleep(Duration::from_millis(750));
+            std::thread::sleep(Duration::from_millis(5));
             let Some(shared) = weak.upgrade() else { break };
             let Ok(mut w) = shared.try_lock() else {
                 continue;
             };
+            // The same lock owns every read. Requests also dispatch notifications,
+            // so a release arriving during a configuration read cannot get lost.
+            for _ in 0..64 {
+                match w.channel.recv(0) {
+                    Ok(r) => w.notification(&r),
+                    Err(HubError::Io(_)) => {
+                        if let Some(h) = &mut w.host {
+                            h.invalidate();
+                        }
+                        return;
+                    }
+                    Err(_) => break,
+                }
+            }
+            if Instant::now() < next_poll {
+                continue;
+            }
+            next_poll = Instant::now() + Duration::from_millis(750);
             let value = w
                 .onboard(4, &[])
                 .and_then(|p| w.onboard(11, &[]).map(|d| (be(&p), d[0])));
             match value {
                 Ok(value) => {
+                    if w.host.as_ref().is_some_and(|h| h.profile != value.0 as u8)
+                        && w.refresh_host(value.0 as u8).is_err() {
+                        if let Some(h) = &mut w.host {
+                            h.invalidate();
+                        }
+                    }
                     if previous.is_some_and(|old| old != value) {
                         if let Some(cb) = &w.notify {
                             cb(HubEvent::StateChanged(w.id.clone()));
@@ -395,6 +480,9 @@ pub fn open(
                     previous = Some(value);
                 }
                 Err(_) => {
+                    if let Some(h) = &mut w.host {
+                        h.invalidate();
+                    }
                     if let Some(cb) = &w.notify {
                         cb(HubEvent::StateChanged(w.id.clone()));
                     }
@@ -596,7 +684,7 @@ impl Logitech {
     }
     fn read_macros(&self, w: &mut Wire) -> HubResult<Vec<Option<MacroDef>>> {
         let names = self.macro_names();
-        (0..10)
+        let mut result: Vec<_> = (0..10)
             .map(|slot| {
                 let data = w.sector(slot as u8 + 6)?;
                 Ok(macros::decode(
@@ -608,7 +696,11 @@ impl Logitech {
                 )
                 .ok())
             })
-            .collect()
+            .collect::<HubResult<_>>()?;
+        if let Some(host) = &w.host {
+            result.extend(host.macros());
+        }
+        Ok(result)
     }
     fn macro_references(w: &mut Wire, slot: usize) -> HubResult<Vec<(u8, usize)>> {
         let sector = slot as u8 + 6;
@@ -685,10 +777,21 @@ impl DeviceDriver for Logitech {
         let stage = w.onboard(11, &[])?[0] as usize;
         let shift = stages.get(data[2] as usize).unwrap_or(&stages[0]).x;
         let macros = self.read_macros(&mut w)?;
+        if let Some(host) = &mut w.host {
+            host.refresh(active, data);
+        }
         let buttons = (0..BUTTONS * 2)
             .map(|slot| {
                 let at = offset(slot).unwrap();
                 let b = &data[at..at + 4];
+                if b == host::MARKER {
+                    if let Some(binding) = w.host.as_ref().and_then(|h| h.binding(active, slot)) {
+                        return ButtonAction::Macro {
+                            slot: binding.slot,
+                            run: binding.run,
+                        };
+                    }
+                }
                 if b[0] == 0 && (6..16).contains(&b[1]) && b[2..] == [0, 0] {
                     let macro_slot = b[1] - 6;
                     if let Some(def) = &macros[macro_slot as usize] {
@@ -746,9 +849,39 @@ impl DeviceDriver for Logitech {
     fn apply(&self, change: &Change) -> HubResult<()> {
         let mut w = self.wire.lock().unwrap_or_else(|p| p.into_inner());
         let current = w.current()?;
+        if let Some(h) = &mut w.host {
+            h.invalidate();
+        }
         if let Change::Macro { slot, def } = change {
+            if *slot >= 10 {
+                if def.is_none() {
+                    for profile in 1..=w.count {
+                        let data = w.valid_sector(profile)?;
+                        for button in 0..BUTTONS * 2 {
+                            let at = offset(button)?;
+                            if data[at..at + 4] == host::MARKER
+                                && w.host
+                                    .as_ref()
+                                    .and_then(|h| h.binding(profile, button))
+                                    .is_some_and(|b| b.slot as usize == *slot)
+                            {
+                                return Err(invalid(
+                                    "先に全プロファイルのPCマクロ割り当てを解除してください",
+                                ));
+                            }
+                        }
+                    }
+                }
+                w.host
+                    .as_mut()
+                    .ok_or(HubError::Unsupported("PC macros"))?
+                    .set_macro(*slot, def.as_ref())?;
+                w.refresh_host(current)?;
+                return Ok(());
+            }
             self.write_macro(&mut w, *slot, def.as_ref())?;
             w.select(current)?;
+            w.refresh_host(current)?;
             return Ok(());
         }
         if let Change::Profile(index) = change {
@@ -756,6 +889,7 @@ impl DeviceDriver for Logitech {
                 return Err(invalid("Profile out of range"));
             }
             w.select(index + 1)?;
+            w.refresh_host(index + 1)?;
             fs::create_dir_all(self.metadata.parent().unwrap()).map_err(io)?;
             fs::write(
                 self.metadata.with_file_name("selected-profile.json"),
@@ -778,6 +912,7 @@ impl DeviceDriver for Logitech {
             if be(&live[1..]) != le(&data[3 + index * 2..]) {
                 return Err(protocol("Live DPI verification failed"));
             }
+            w.refresh_host(current)?;
             return Ok(());
         }
         let sector = match change {
@@ -785,6 +920,9 @@ impl DeviceDriver for Logitech {
             _ => current,
         };
         let mut data = w.valid_sector(sector)?;
+        // PC metadata is committed before installing its marker. Failed device
+        // writes restore the previous intent; reads trust only verified markers.
+        let mut host_binding = None;
         let mut active = w.onboard(11, &[])?[0];
         if active >= 5 {
             return Err(protocol("Invalid active DPI index"));
@@ -849,6 +987,19 @@ impl DeviceDriver for Logitech {
                     data[2] = i as u8;
                 }
                 if let ButtonAction::Macro {
+                    slot: macro_slot @ 10..=19,
+                    run,
+                } = action
+                {
+                    data[at..at + 4].copy_from_slice(&host::MARKER);
+                    host_binding = Some((
+                        *slot,
+                        Some(host::Binding {
+                            slot: *macro_slot,
+                            run: *run,
+                        }),
+                    ));
+                } else if let ButtonAction::Macro {
                     slot: macro_slot,
                     run,
                 } = action
@@ -889,6 +1040,9 @@ impl DeviceDriver for Logitech {
                 } else {
                     data[at..at + 4].copy_from_slice(&encode_button(action)?);
                 }
+                if host_binding.is_none() && w.host.is_some() {
+                    host_binding = Some((*slot, None));
+                }
             }
             Change::ProfileName { index, name } if *index < w.count => {
                 let utf16: Vec<u16> = name.encode_utf16().collect();
@@ -905,7 +1059,25 @@ impl DeviceDriver for Logitech {
         validate_left(&data)?;
         let expected_rate = data[0];
         let expected_dpi = le(&data[3 + active as usize * 2..]);
-        w.write(sector, data)?;
+        let previous_binding = host_binding
+            .as_ref()
+            .and_then(|(button, _)| w.host.as_ref().and_then(|h| h.binding(current, *button)));
+        if let Some((button, binding)) = &host_binding {
+            w.host
+                .as_mut()
+                .ok_or(HubError::Unsupported("PC macros"))?
+                .set_binding(current, *button, binding.clone())?;
+        }
+        if let Err(e) = w.write(sector, data) {
+            if let Some((button, _)) = host_binding {
+                let _ = w
+                    .host
+                    .as_mut()
+                    .unwrap()
+                    .set_binding(current, button, previous_binding);
+            }
+            return Err(e);
+        }
         if sector == current {
             w.select(current)?;
             w.onboard(12, &[active])?;
@@ -919,6 +1091,7 @@ impl DeviceDriver for Logitech {
                 ));
             }
         }
+        w.refresh_host(current)?;
         Ok(())
     }
     fn run_action(&self, id: &str, file: Option<&Path>) -> HubResult<ActionOutcome> {
@@ -980,6 +1153,8 @@ mod tests {
     }
     fn mock_wire() -> Wire {
         Wire {
+            spy: 0,
+            host: None,
             channel: Channel::mock(),
             software: 12,
             profiles: 12,
@@ -1014,5 +1189,25 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("error 02"));
+    }
+    #[test]
+    #[cfg(windows)]
+    fn spy_press_and_release_are_dispatched_during_command_reads() {
+        let mut w = mock_wire();
+        w.spy = 13;
+        w.host = Some(host::Host::test_empty());
+        for mask in [0x0100u16, 0] {
+            let mut notification = [0u8; 20];
+            notification[..4].copy_from_slice(&[0x11, 0xff, 13, 0]);
+            notification[4..6].copy_from_slice(&mask.to_be_bytes());
+            w.channel.mock_reply(&notification);
+            let mut response = [0u8; 20];
+            response[..5].copy_from_slice(&[0x11, 0xff, 12, 0x20 | (w.software % 15 + 1), 1]);
+            w.channel.mock_reply(&response);
+            w.onboard(2, &[]).unwrap();
+            assert_eq!(w.host.as_ref().unwrap().held_mask(), mask);
+        }
+        // Avoid an irrelevant stop-spy request against an empty mock queue.
+        w.spy = 0;
     }
 }

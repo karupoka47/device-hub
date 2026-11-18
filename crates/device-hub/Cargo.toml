@@ -3,7 +3,11 @@ name = "device-hub"
 version = "0.2.6"
 edition.workspace = true
 license.workspace = true
-description = "Device HUB — ブラウザ無しでマウス/キーボードを設定する GPUI フロントエンド (Liquid Glass)"
+description = "Deka Hub — ブラウザ無しでマウス/キーボードを設定する GPUI フロントエンド (Liquid Glass)"
+
+[[bin]]
+name = "deka-hub"
+path = "src/main.rs"
 
 [dependencies]
 devhub-core = { path = "../devhub-core" }

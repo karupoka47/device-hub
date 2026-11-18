@@ -926,6 +926,9 @@ impl XsydDriver {
 
     /// マクロ書き込み。mode パケット → data パケット (15 イベントずつ) の順。
     fn write_macro(&self, slot: u8, def: Option<&MacroDef>) -> HubResult<()> {
+        if def.is_some_and(|d| d.events.iter().any(|e| matches!(e.input, MacroInput::ClickAt { .. }))) {
+            return Err(HubError::Unsupported("座標クリック"));
+        }
         match def {
             None => {
                 self.cmd(grp::MACRO, sub::SET_MACRO_MODE, &[slot, 0, 0, 0, 0, 0, 0])?;
@@ -944,6 +947,7 @@ impl XsydDriver {
                         let key = match ev.input {
                             MacroInput::Key(k) => k as u32,
                             MacroInput::Mouse(f) => f as u32,
+                            MacroInput::ClickAt { .. } => unreachable!("validated before write"),
                         };
                         let w = ((ev.edge == MacroEdge::Down) as u32) << 31
                             | ev.delay_ms.min(32767) << 16
@@ -2171,6 +2175,7 @@ fn build_caps(xs: &XsydInfo) -> Capabilities {
                 AdvancedKind::Rs,
             ],
             macros: xs.macro_space.map(|(slots, max_ev)| MacroCaps {
+                coordinate_slots: vec![],
                 button_toggle: true,
                 slots,
                 max_events: max_ev,
