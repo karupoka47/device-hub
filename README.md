@@ -70,6 +70,10 @@ Run `./scripts/install-resident.ps1` after a release build to install per-user,
 start at login and use the notification-area icon. Closing the window hides it;
 right-click the tray icon to exit. `--background` starts hidden.
 
+In the G502 **Buttons** page, press a physical mouse button to light its number
+and assignment rows. The last detected button remains labelled; clicking a number
+below the diagram scrolls to its row. Normal and G-shift rows share physical numbers.
+
 ### Coordinate-click macros (G502 HERO / Windows)
 
 Open **Macros → 座標マクロを新規作成**. Enter X/Y physical screen coordinates

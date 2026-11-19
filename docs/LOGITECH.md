@@ -107,6 +107,24 @@ permissions. Forced OS process termination cannot execute release cleanup.
 
 ## Resident application
 
+### Physical-button identification in the assignment page
+
+On Windows, the existing `8110` reader also emits `HubEvent::ButtonActivity`
+for changes to the 11-bit physical mask, including a final empty snapshot on
+disconnect/driver drop. Duplicate masks, foreign-device reports and command replies
+do not count as new presses. PC macro triggering still receives the same physical
+events independently.
+
+`MouseCaps.button_activity` groups normal slot `i` and G-shift slot `i+11`.
+Both assignment rows therefore display the same physical number and light together.
+The UI shows held inputs, an 850 ms release glow, and the last detected name.
+All 11 numbers appear below the generic mouse illustration; clicking one reveals
+its assignment row. This observes existing onboard input without remapping buttons
+or entering host mode. A firmware-disabled/unbound button may not produce an
+onboard spy event; no keyboard/hook inference is used as a fallback.
+
+### Tray and startup
+
 Windows tray icon, close-to-tray, right-click exit, `--background`, single-instance
 activation, and icon re-registration after Explorer restart.
 `scripts/install-resident.ps1` installs per-user to
@@ -157,6 +175,16 @@ successful memory readback alone is not proof of macro playback.
   second-launch restoration keep exactly one resident process.
   Native UI created/saved/deleted a single ClickAt event without a spurious Up.
   Final unit suite: 61 passed; workspace Clippy has only pre-existing OBS/audio warnings.
+
+### Button feedback verification (2026-11-19)
+
+* 62 HID tests and 2 transient-feedback tests passed; command-read interleaving,
+  duplicate masks, simultaneous buttons, release/drop and short-tap afterglow covered.
+* Workspace Clippy passed with the existing OBS/audio warnings; release build
+  installed and its SHA-256 matched the build.
+* Native assignment page displayed a received G1 press as the last detected input,
+  with its row outlined. Clicking number 11 scrolled to G11's assignment row.
+  Physical hold/release feedback for every button has not been manually checked.
 
 ### G HUB desktop migration
 

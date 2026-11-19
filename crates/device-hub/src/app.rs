@@ -295,6 +295,7 @@ pub struct Shell {
     pub tab: Tab,
     pub focus: FocusHandle,
     pub scroll: ScrollHandle,
+    pub button_scroll: ScrollHandle,
 
     pub drag: Option<Drag>,
     pub popup: Option<Popup>,
@@ -456,6 +457,16 @@ impl Shell {
             while let Some(msg) = rx.next().await {
                 let alive = this
                     .update(cx, |this, cx| {
+                        // Physical input is frequent while gaming. Cache it without
+                        // redrawing hidden/unrelated pages or running settings refresh.
+                        if let crate::store::Msg::Event(HubEvent::ButtonActivity { id, .. }) = &msg {
+                            let visible = this.tab == Tab::Buttons
+                                && this.last_window_active
+                                && this.device_id().as_ref() == Some(id);
+                            this.hub.handle(msg);
+                            if visible { cx.notify(); }
+                            return;
+                        }
                         let scan_succeeded =
                             matches!(&msg, crate::store::Msg::Scanned { res: Ok(_), .. });
                         if let Some((m, e)) = this.hub.handle(msg) {
@@ -602,6 +613,7 @@ impl Shell {
             tab: Tab::Dpi,
             focus,
             scroll: ScrollHandle::new(),
+            button_scroll: ScrollHandle::new(),
             drag: None,
             popup: None,
             modal: None,

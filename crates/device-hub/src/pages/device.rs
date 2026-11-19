@@ -57,7 +57,7 @@ impl Shell {
                 });
                 let content = match self.tab {
                     Tab::Dpi => self.page_dpi(window, cx).into_any_element(),
-                    Tab::Buttons => self.page_buttons(cx).into_any_element(),
+                    Tab::Buttons => self.page_buttons(window, cx).into_any_element(),
                     Tab::Performance => self.page_performance(window, cx).into_any_element(),
                     Tab::Keymap => self.page_keymap(window, cx).into_any_element(),
                     Tab::Trigger => self.page_trigger(window, cx).into_any_element(),

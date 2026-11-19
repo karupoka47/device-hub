@@ -1348,6 +1348,7 @@ fn build_caps(info: &DeviceInfo, m: &R8Model) -> Capabilities {
             renamable: false,
         }),
         mouse: Some(MouseCaps {
+            button_activity: vec![],
             dpi_min: 50,
             dpi_max: m.dpi_max,
             dpi_step: if m.sensor_3955 { 1 } else { 50 },

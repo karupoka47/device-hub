@@ -518,12 +518,35 @@ impl Shell {
 
     // ================================================================== ボタン
 
-    pub fn page_buttons(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub fn page_buttons(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let p = theme::pal();
         let Some((mc, ms)) = mouse_parts(self) else {
             return div().into_any_element();
         };
         let hover_slot = (0..mc.buttons.len()).find(|i| motion::hovered(&format!("btnrow:{i}")));
+        let now = std::time::Instant::now();
+        let activity = self.cur().map(|s| &s.button_activity);
+        let last = activity.and_then(|a| a.last);
+        let feedback = !mc.button_activity.is_empty();
+        let levels: Vec<f32> = (0..mc.button_activity.len())
+            .map(|i| activity.map_or(0., |a| a.glow(i, now)))
+            .collect();
+        let held: Vec<bool> = (0..mc.button_activity.len())
+            .map(|i| activity.is_some_and(|a| a.held(i)))
+            .collect();
+        if activity.is_some_and(|a| a.fading(now)) {
+            motion::keep_alive();
+        }
+        let physical = |slot: usize| {
+            mc.button_activity
+                .iter()
+                .position(|slots| slots.contains(&slot))
+        };
+        let hover_input = hover_slot.and_then(physical);
 
         // マウスの図。
         let mark = |n: usize, x: f32, y: f32, hot: bool| {
@@ -617,11 +640,97 @@ impl Shell {
                     .rounded(px(3.))
                     .bg(theme::alpha(p.fg, 0.3)),
             );
-        for (i, (x, y)) in positions.iter().enumerate().take(mc.buttons.len()) {
-            figure = figure.child(mark(i, *x, *y, hover_slot == Some(i)));
+        let physical_count = if feedback {
+            mc.button_activity.len()
+        } else {
+            mc.buttons.len()
+        };
+        for (i, (x, y)) in positions.iter().enumerate().take(physical_count) {
+            figure = figure.child(mark(
+                i,
+                *x,
+                *y,
+                if feedback {
+                    hover_input == Some(i) || levels[i] > 0.
+                } else {
+                    hover_slot == Some(i)
+                },
+            ));
         }
 
-        let mut list = ui::body().pt(px(4.));
+        // All physical inputs, including extra thumb/DPI/tilt buttons not shown
+        // in the generic five-button drawing. Clicking a number reveals its row.
+        let mut indicators = div().flex().flex_wrap().justify_center().gap(px(6.));
+        for (i, slots) in mc.button_activity.iter().enumerate() {
+            let Some(slot) = slots.first().copied().filter(|s| *s < mc.buttons.len()) else {
+                continue;
+            };
+            let level = levels[i];
+            indicators = indicators.child(
+                div()
+                    .id(SharedString::from(format!("button-input-{i}")))
+                    .size(px(30.))
+                    .rounded(px(10.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .cursor_pointer()
+                    .text_size(px(12.))
+                    .font_weight(FontWeight::BOLD)
+                    .bg(if level > 0. {
+                        theme::alpha(p.accent, 0.3 + 0.7 * level)
+                    } else {
+                        p.ctrl
+                    })
+                    .text_color(if level > 0. { p.on_accent } else { p.fg })
+                    .border_1()
+                    .border_color(if last == Some(i) { p.accent } else { p.hair })
+                    .child(format!("{}", i + 1))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.button_scroll.scroll_to_item(slot);
+                        cx.notify();
+                    })),
+            );
+        }
+        let mut detected = div().w_full().flex().flex_col().gap(px(6.));
+        if let Some(i) = last.filter(|i| *i < mc.button_activity.len()) {
+            let name = mc.button_activity[i]
+                .first()
+                .and_then(|s| mc.buttons.get(*s))
+                .map(|b| b.name.clone())
+                .unwrap_or_default();
+            detected = detected
+                .child(ui::chip(
+                    if held[i] {
+                        "● 押下中"
+                    } else {
+                        "最後に押したボタン"
+                    },
+                    p.accent,
+                ))
+                .child(
+                    div()
+                        .text_size(px(17.))
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(p.accent)
+                        .child(format!("{} · {name}", i + 1)),
+                );
+        } else {
+            detected = detected.child(ui::sub("マウスのボタンを押して確認"));
+        }
+        detected = detected.child(ui::faint(
+            "対応する番号と割り当て欄が光ります。番号をクリックすると、その欄を表示します。",
+        ));
+
+        let mut list = ui::body()
+            .pt(px(4.))
+            .pb(px(10.))
+            .id("button-assignment-list")
+            .max_h(px(
+                (f32::from(window.viewport_size().height) - 260.).clamp(240., 620.)
+            ))
+            .overflow_y_scroll()
+            .track_scroll(&self.button_scroll);
         for (i, slot) in mc.buttons.iter().enumerate() {
             let a = ms.buttons.get(i).cloned().unwrap_or(ButtonAction::Disabled);
             let label = action_label(&a, &ms.macros);
@@ -635,6 +744,12 @@ impl Shell {
             );
             let key = format!("btnrow:{i}");
             let a2 = a.clone();
+            let input = physical(i);
+            let level = input.map_or(0., |n| levels[n]);
+            let pressed = input.is_some_and(|n| held[n]);
+            let latest = input.is_some_and(|n| last == Some(n));
+            let hot = level > 0. || hover_slot == Some(i);
+            let number = input.unwrap_or(i) + 1;
             list = list.child(
                 div()
                     .id(SharedString::from(format!("btn-slot-{i}")))
@@ -646,8 +761,31 @@ impl Shell {
                     .py(px(10.))
                     .my(px(2.))
                     .rounded(px(14.))
+                    .border_1()
+                    .border_color(theme::alpha(
+                        p.accent,
+                        if level > 0. {
+                            0.35 + 0.65 * level
+                        } else if latest {
+                            0.35
+                        } else {
+                            0.
+                        },
+                    ))
+                    .when(level > 0. || latest, |d| {
+                        d.bg(theme::alpha(p.accent, 0.05 + 0.18 * level))
+                    })
+                    .when(level > 0., |d| {
+                        d.shadow(vec![BoxShadow {
+                            color: theme::alpha(p.accent, 0.22 * level),
+                            offset: point(px(0.), px(0.)),
+                            blur_radius: px(12.),
+                            spread_radius: px(0.),
+                            inset: false,
+                        }])
+                    })
                     .cursor_pointer()
-                    .hover(|s| s.bg(p.ctrl))
+                    .when(level == 0. && !latest, |d| d.hover(|s| s.bg(p.ctrl)))
                     .child(motion::track(key))
                     .child(
                         div()
@@ -658,17 +796,9 @@ impl Shell {
                             .justify_center()
                             .text_size(px(11.))
                             .font_weight(FontWeight::BOLD)
-                            .bg(if hover_slot == Some(i) {
-                                p.accent
-                            } else {
-                                p.ctrl_hover
-                            })
-                            .text_color(if hover_slot == Some(i) {
-                                p.on_accent
-                            } else {
-                                p.fg
-                            })
-                            .child(format!("{}", i + 1)),
+                            .bg(if hot { p.accent } else { p.ctrl_hover })
+                            .text_color(if hot { p.on_accent } else { p.fg })
+                            .child(format!("{number}")),
                     )
                     .child(
                         div()
@@ -688,6 +818,8 @@ impl Shell {
                                     .child(label),
                             ),
                     )
+                    .when(pressed, |d| d.child(ui::chip("押下中", p.accent)))
+                    .when(!pressed && latest, |d| d.child(ui::chip("検出", p.accent)))
                     .child(ui::icon("chevron-right", 15., p.faint))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.modal = Some(Modal::Button {
@@ -750,7 +882,8 @@ impl Shell {
                         .items_center()
                         .gap(px(8.))
                         .child(figure)
-                        .child(ui::faint("上から見た図 · 番号は右の一覧に対応")),
+                        .child(ui::faint("上から見た概略図 · 番号は右の一覧に対応"))
+                        .when(feedback, |d| d.child(indicators).child(detected)),
                 ),
             )
             .child(

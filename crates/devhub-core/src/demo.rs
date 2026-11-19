@@ -796,6 +796,7 @@ pub fn mouse_caps(wireless: bool, magnetic: bool) -> Capabilities {
         actions,
         profiles: None,
         mouse: Some(MouseCaps {
+            button_activity: vec![],
             dpi_min: 50,
             dpi_max: 40_000,
             dpi_step: 10,

@@ -643,6 +643,9 @@ pub struct MouseCaps {
     pub stage_toggle: bool,
     /// 物理ボタン (並び = `MouseState::buttons` の並び)。
     pub buttons: Vec<ButtonSlot>,
+    /// Physical input index → assignment slot indices. Aliases (e.g. normal/G-shift)
+    /// belong to the same group. Nonempty means HubEvent::ButtonActivity is supported.
+    pub button_activity: Vec<Vec<usize>>,
     /// 割り当て可能な種類。
     pub button_kinds: Vec<ButtonActionKind>,
     /// 「左クリックが最低 1 個必要」を UI でも検査する。

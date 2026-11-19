@@ -145,6 +145,7 @@ pub enum Status {
 
 /// 開いているデバイス 1 台。
 pub struct Session {
+    pub button_activity: crate::button_activity::ButtonActivity,
     pub id: DeviceId,
     pub info: DeviceInfo,
     pub caps: Option<Capabilities>,
@@ -322,6 +323,7 @@ impl Hub {
         self.sessions.insert(
             id.clone(),
             Session {
+                button_activity: Default::default(),
                 id: id.clone(),
                 info,
                 caps: None,
@@ -649,6 +651,7 @@ impl Hub {
                         }
                     }
                     s.info = info;
+                    s.button_activity = Default::default();
                     s.caps = Some(*caps);
                     send_read(s);
                     // 軸名を裏で取る (ベンダー API、失敗しても何も変わらない)。
@@ -898,6 +901,13 @@ impl Hub {
             }
             Msg::Event(ev) => {
                 match ev {
+                    HubEvent::ButtonActivity { id, pressed } => {
+                        if let Some(s) = self.sessions.get_mut(&id) {
+                            let count = s.caps.as_ref().and_then(|c| c.mouse.as_ref())
+                                .map_or(0, |m| m.button_activity.len());
+                            s.button_activity.update(pressed, count, std::time::Instant::now());
+                        }
+                    }
                     HubEvent::RuntimeError { message, .. } => return Some((message, true)),
                     HubEvent::DevicesChanged => self.scan(),
                     HubEvent::StateChanged(id) => self.reload_inner(&id, false),

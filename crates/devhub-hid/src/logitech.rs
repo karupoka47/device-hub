@@ -60,6 +60,7 @@ pub fn crc16(bytes: &[u8]) -> u16 {
 
 struct Wire {
     spy: u8,
+    button_mask: u16,
     host: Option<host::Host>,
     channel: Channel,
     software: u8,
@@ -119,8 +120,10 @@ impl Wire {
             return;
         }
         if self.spy != 0 && r[2..4] == [self.spy, 0] {
+            let mask = be(&r[4..]) & ((1 << BUTTONS) - 1);
+            self.button_activity(mask);
             if let Some(host) = &mut self.host {
-                host.buttons(be(&r[4..]));
+                host.buttons(mask);
             }
         } else if r[2] == self.profiles && r[3] & 0x0f == 0 {
             // Only profile notifications invalidate routing; DPI events do not stop playback.
@@ -132,6 +135,18 @@ impl Wire {
             if let Some(cb) = &self.notify {
                 cb(HubEvent::StateChanged(self.id.clone()));
             }
+        }
+    }
+    fn button_activity(&mut self, mask: u16) {
+        if self.button_mask == mask {
+            return;
+        }
+        self.button_mask = mask;
+        if let Some(cb) = &self.notify {
+            cb(HubEvent::ButtonActivity {
+                id: self.id.clone(),
+                pressed: (0..BUTTONS).filter(|i| mask & (1 << i) != 0).collect(),
+            });
         }
     }
     fn refresh_host(&mut self, profile: u8) -> HubResult<()> {
@@ -221,6 +236,7 @@ impl Wire {
 
 impl Drop for Wire {
     fn drop(&mut self) {
+        self.button_activity(0);
         if let Some(host) = &mut self.host {
             host.invalidate();
         }
@@ -255,6 +271,7 @@ pub fn open(
         .collect();
     let mut wire = Wire {
         spy: 0,
+        button_mask: 0,
         host: None,
         channel: Channel::open(dev, 20, 20),
         software: 12,
@@ -323,6 +340,11 @@ pub fn open(
         renamable: true,
     });
     caps.mouse = Some(MouseCaps {
+        button_activity: if cfg!(windows) {
+            (0..BUTTONS).map(|i| vec![i, i + BUTTONS]).collect()
+        } else {
+            vec![]
+        },
         dpi_min,
         dpi_max,
         dpi_step,
@@ -449,6 +471,7 @@ pub fn open(
                 match w.channel.recv(0) {
                     Ok(r) => w.notification(&r),
                     Err(HubError::Io(_)) => {
+                        w.button_activity(0);
                         if let Some(h) = &mut w.host {
                             h.invalidate();
                         }
@@ -467,7 +490,8 @@ pub fn open(
             match value {
                 Ok(value) => {
                     if w.host.as_ref().is_some_and(|h| h.profile != value.0 as u8)
-                        && w.refresh_host(value.0 as u8).is_err() {
+                        && w.refresh_host(value.0 as u8).is_err()
+                    {
                         if let Some(h) = &mut w.host {
                             h.invalidate();
                         }
@@ -480,6 +504,7 @@ pub fn open(
                     previous = Some(value);
                 }
                 Err(_) => {
+                    w.button_activity(0);
                     if let Some(h) = &mut w.host {
                         h.invalidate();
                     }
@@ -1154,6 +1179,7 @@ mod tests {
     fn mock_wire() -> Wire {
         Wire {
             spy: 0,
+            button_mask: 0,
             host: None,
             channel: Channel::mock(),
             software: 12,
@@ -1196,7 +1222,14 @@ mod tests {
         let mut w = mock_wire();
         w.spy = 13;
         w.host = Some(host::Host::test_empty());
-        for mask in [0x0100u16, 0] {
+        let observed = Arc::new(Mutex::new(Vec::new()));
+        let out = observed.clone();
+        w.notify = Some(Arc::new(move |ev| {
+            if let HubEvent::ButtonActivity { id, pressed } = ev {
+                out.lock().unwrap().push((id, pressed));
+            }
+        }));
+        for mask in [0x0100u16, 0x0100, 0x0108, 0, 0] {
             let mut notification = [0u8; 20];
             notification[..4].copy_from_slice(&[0x11, 0xff, 13, 0]);
             notification[4..6].copy_from_slice(&mask.to_be_bytes());
@@ -1207,7 +1240,44 @@ mod tests {
             w.onboard(2, &[]).unwrap();
             assert_eq!(w.host.as_ref().unwrap().held_mask(), mask);
         }
+        assert_eq!(
+            *observed.lock().unwrap(),
+            vec![
+                (DeviceId("test".into()), vec![8]),
+                (DeviceId("test".into()), vec![3, 8]),
+                (DeviceId("test".into()), vec![]),
+            ]
+        );
         // Avoid an irrelevant stop-spy request against an empty mock queue.
         w.spy = 0;
+    }
+    #[test]
+    fn activity_ignores_foreign_reports_and_releases_on_drop() {
+        let observed = Arc::new(Mutex::new(Vec::new()));
+        {
+            let mut w = mock_wire();
+            w.spy = 13;
+            let out = observed.clone();
+            w.notify = Some(Arc::new(move |ev| {
+                if let HubEvent::ButtonActivity { pressed, .. } = ev {
+                    out.lock().unwrap().push(pressed);
+                }
+            }));
+            // Wrong device, response (software-id != 0), truncated, wrong report ID.
+            for r in [
+                &[0x11, 0x01, 13, 0, 4, 0][..],
+                &[0x11, 0xff, 13, 0x1d, 4, 0],
+                &[0x11, 0xff, 13, 0, 4],
+                &[0x01, 0xff, 13, 0, 4, 0],
+            ] {
+                w.notification(r);
+            }
+            assert!(observed.lock().unwrap().is_empty());
+            // G11 is bit 10, not byte-swapped bit 2. Ignore reserved high bits.
+            w.notification(&[0x11, 0xff, 13, 0, 0x84, 0]);
+            assert_eq!(*observed.lock().unwrap(), vec![vec![10]]);
+            w.spy = 0; // No stop request against the mock.
+        }
+        assert_eq!(*observed.lock().unwrap(), vec![vec![10], vec![]]);
     }
 }

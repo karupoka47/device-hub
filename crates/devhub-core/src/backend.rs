@@ -64,6 +64,9 @@ pub type HubResult<T> = Result<T, HubError>;
 /// 何も呼ばなくても UI は 2 秒ごとの `scan` と 30 秒ごとの `battery` で動く。
 #[derive(Clone, Debug)]
 pub enum HubEvent {
+    /// Full held-physical-input snapshot; indices refer to MouseCaps::button_activity.
+    /// Independent of assigned keys/macros. Empty on release/disconnection.
+    ButtonActivity { id: DeviceId, pressed: Vec<usize> },
     /// A resident operation failed asynchronously.
     RuntimeError { id: DeviceId, message: String },
     /// 挿抜。UI は `scan` し直す。

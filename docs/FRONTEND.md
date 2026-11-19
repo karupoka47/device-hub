@@ -5,6 +5,7 @@ src/
   main.rs        窓を開く (TitleBar::window_options, 1320x840, 背面時 250ms 間引き)
   app.rs         Shell: 全状態・ルート (Home / Device / Settings)・タブ・サイドバー・キー入力・ドラッグ
   store.rs       Hub / Session: デバイスごとのワーカースレッド、楽観的反映 (apply_local)、futures channel で結果受信
+  button_activity.rs  物理ボタンの押下・解放後850msの余韻・最後に押した番号（設定値とは別の一時状態）
   overlay.rs     ポップアップメニュー・モーダル (確認 / ボタン割り当て / キー取り込み / 色 / テキスト)・トースト
   ui.rs          部品: card / row / toggle / slider(_curve) / segmented / select / stepper / tab_bar / button / chip
   glass.rs       Liquid Glass の面 (Panel / Clear / Frost / Sheet) と泡レンズ
@@ -45,6 +46,19 @@ src/
 UI 操作 → `Shell::apply(Change)` → `Hub::apply` が UI の状態を即書き換え (apply_local) → ワーカーへ送信 →
 ワーカーが同じ対象の古い変更を捨てて `DeviceDriver::apply` → 結果 (`Msg::Applied`) → 失敗ならトースト + `read` し直し。
 ヘッダの点: 黄 = 書き込み待ちあり / 緑 = 同期済み。
+
+### ボタン割り当ての押下表示
+
+`MouseCaps.button_activity` は「物理入力のindex → 対応する割り当て欄index群」。
+空なら非対応。G502は通常側とGシフト側の欄を同じ物理グループに入れる。
+ドライバの `HubEvent::ButtonActivity { id, pressed }`（押下中の物理入力indexの全体）
+を `Session.button_activity` に取り込み、`pages/mouse.rs` が番号・欄の背景と枠を発光させる。
+短いクリックも見えるよう解放後850msでフェードし、最後に押した番号と名前は残す。
+番号チップをクリックすると該当欄までリストをスクロールする。
+
+割り当てたキー入力や合成クリックから物理番号を推測しない。
+UIはcapsとイベントだけを使い、デバイス名では分岐しない。
+通知で設定を再読込せず、非表示・他のタブでは入力通知を契機とした再描画もしない。
 
 ## 新しい画面が必要になったら
 

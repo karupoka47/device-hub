@@ -11,6 +11,7 @@
 
 pub mod app;
 pub mod audio;
+pub mod button_activity;
 pub mod cursor;
 pub mod fwstate;
 pub mod glass;
