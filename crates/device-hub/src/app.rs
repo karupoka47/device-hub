@@ -453,15 +453,23 @@ impl Shell {
         hub.scan();
 
         // ワーカーからの結果を受け取る (来たときだけ起きる)。
+        let window_handle = window.window_handle();
         cx.spawn(async move |this: WeakEntity<Shell>, cx: &mut AsyncApp| {
             while let Some(msg) = rx.next().await {
+                // A visible assignment page remains an input monitor even when
+                // another window has focus. Focus can change during macro playback.
+                let activity_visible =
+                    matches!(&msg, crate::store::Msg::Event(HubEvent::ButtonActivity { .. }))
+                        && cx
+                            .update_window(window_handle, |_, window, _| window.is_visible())
+                            .unwrap_or(false);
                 let alive = this
                     .update(cx, |this, cx| {
                         // Physical input is frequent while gaming. Cache it without
                         // redrawing hidden/unrelated pages or running settings refresh.
                         if let crate::store::Msg::Event(HubEvent::ButtonActivity { id, .. }) = &msg {
                             let visible = this.tab == Tab::Buttons
-                                && this.last_window_active
+                                && activity_visible
                                 && this.device_id().as_ref() == Some(id);
                             this.hub.handle(msg);
                             if visible { cx.notify(); }

@@ -186,6 +186,15 @@ successful memory readback alone is not proof of macro playback.
   with its row outlined. Clicking number 11 scrolled to G11's assignment row.
   Physical hold/release feedback for every button has not been manually checked.
 
+### Button feedback focus fix (2026-11-20)
+
+The UI previously gated activity redraws on window focus. Presses could therefore
+be received without visible feedback when another window was active. Activity now
+checks window visibility instead, while retaining the selected device/tab filter.
+The user confirmed that the previously unlit rapid-fire button now highlights in
+the G HUB Desktop profile. `cargo check` and the release build passed; the installed
+binary hash matched the build. Macro definitions and device bindings were not changed.
+
 ### G HUB desktop migration
 
 1. `python scripts/inspect-ghub.py` creates a consistent SQLite backup using the
