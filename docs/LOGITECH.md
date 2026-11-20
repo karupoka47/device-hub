@@ -97,6 +97,11 @@ inactive. Do not copy this marker to other models without hardware verification.
 All command reads dispatch spy notifications; the idle reader drains every 5 ms
 under the same transport lock. Physical release is routed by button identity,
 including when G-shift changes while held. Profile changes invalidate routing.
+The input monitor survives transient read/write errors and missed profile/DPI
+replies: it clears held feedback, cancels PC playback, and retries after
+0.5/1/2 seconds (maximum backoff 2 seconds). Recovery re-enables `8110` spying,
+refreshes routing and requests a UI state refresh. Profile changes also re-arm
+spying. A DPI-stage change alone does not restart it.
 One serialized player per device supports single, counted and held execution.
 New playback cancels previous playback; Esc, disconnect, profile changes, edits,
 driver drop and graceful shutdown release injected holds.
@@ -194,6 +199,30 @@ checks window visibility instead, while retaining the selected device/tab filter
 The user confirmed that the previously unlit rapid-fire button now highlights in
 the G HUB Desktop profile. `cargo check` and the release build passed; the installed
 binary hash matched the build. Macro definitions and device bindings were not changed.
+
+### Button monitor recovery (2026-11-20)
+
+The focus fix above was insufficient. On recurrence, the device still delivered
+button notifications and answered a read-only ping; a UI-initiated full settings
+read succeeded, but periodic profile/DPI polling had stopped and a pressed row
+remained stuck. The old monitor returned on an input I/O error or broke its loop
+on a single polling failure, leaving a cached driver without its background reader.
+
+`logitech/monitor.rs` replaces those permanent exits with bounded recovery.
+Regression tests inject timeout, read I/O and write I/O failures, then verify
+re-arming, UI refresh and subsequent idle press/release delivery. A separate
+test covers re-arming on profile changes without restarting on DPI-only changes.
+All 64 HID library tests pass. The broader `clippy --all-targets` check also
+encounters an existing `erasing_op` in the unrelated `examples/htxprobe.rs:174`;
+the normal workspace check excludes those diagnostic examples.
+Workspace Clippy and the release build passed (existing OBS/audio warnings only).
+The installed executable matched the build hash. A 16-second passive HID capture
+confirmed profile/DPI heartbeat replies in every one-second interval across a full
+UI reload, close-to-tray and single-instance restoration, with press/release
+notifications continuing afterward. The native assignment page showed a detected
+thumb button after release instead of retaining the earlier stuck "pressed" row.
+Fault injection/recovery was verified in the unit tests, not by disrupting the USB
+connection during this live check.
 
 ### G HUB desktop migration
 

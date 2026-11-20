@@ -3,6 +3,7 @@
 use crate::transport::Channel;
 use devhub_core::{backend::*, model::*};
 mod host;
+mod monitor;
 mod macros;
 use std::{
     collections::BTreeMap,
@@ -453,69 +454,7 @@ pub fn open(
         wire.refresh_host(current)?;
     }
     let wire = Arc::new(Mutex::new(wire));
-    // Hardware DPI/profile buttons keep working while the UI is hidden.
-    // Observe them without holding the device open after the driver is dropped.
-    let weak = Arc::downgrade(&wire);
-    std::thread::spawn(move || {
-        let mut previous = None;
-        let mut next_poll = Instant::now();
-        loop {
-            std::thread::sleep(Duration::from_millis(5));
-            let Some(shared) = weak.upgrade() else { break };
-            let Ok(mut w) = shared.try_lock() else {
-                continue;
-            };
-            // The same lock owns every read. Requests also dispatch notifications,
-            // so a release arriving during a configuration read cannot get lost.
-            for _ in 0..64 {
-                match w.channel.recv(0) {
-                    Ok(r) => w.notification(&r),
-                    Err(HubError::Io(_)) => {
-                        w.button_activity(0);
-                        if let Some(h) = &mut w.host {
-                            h.invalidate();
-                        }
-                        return;
-                    }
-                    Err(_) => break,
-                }
-            }
-            if Instant::now() < next_poll {
-                continue;
-            }
-            next_poll = Instant::now() + Duration::from_millis(750);
-            let value = w
-                .onboard(4, &[])
-                .and_then(|p| w.onboard(11, &[]).map(|d| (be(&p), d[0])));
-            match value {
-                Ok(value) => {
-                    if w.host.as_ref().is_some_and(|h| h.profile != value.0 as u8)
-                        && w.refresh_host(value.0 as u8).is_err()
-                    {
-                        if let Some(h) = &mut w.host {
-                            h.invalidate();
-                        }
-                    }
-                    if previous.is_some_and(|old| old != value) {
-                        if let Some(cb) = &w.notify {
-                            cb(HubEvent::StateChanged(w.id.clone()));
-                        }
-                    }
-                    previous = Some(value);
-                }
-                Err(_) => {
-                    w.button_activity(0);
-                    if let Some(h) = &mut w.host {
-                        h.invalidate();
-                    }
-                    if let Some(cb) = &w.notify {
-                        cb(HubEvent::StateChanged(w.id.clone()));
-                    }
-                    break;
-                }
-            }
-        }
-    });
+    monitor::spawn(&wire);
     Ok(Logitech {
         info,
         metadata: root.join(safe_id).join("macros.json"),
@@ -1176,7 +1115,7 @@ mod tests {
         p[96..100].copy_from_slice(&[0x80, 1, 0, 1]);
         assert!(validate_left(&p).is_ok());
     }
-    fn mock_wire() -> Wire {
+    pub(super) fn mock_wire() -> Wire {
         Wire {
             spy: 0,
             button_mask: 0,

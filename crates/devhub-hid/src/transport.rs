@@ -42,6 +42,32 @@ pub struct MockIo {
     pub sent: Vec<Vec<u8>>,
     pub replies: std::collections::VecDeque<Vec<u8>>,
     fail_send: Option<Vec<u8>>,
+    fail_recv: bool,
+    exchanges: std::collections::VecDeque<(Vec<u8>, Vec<u8>)>,
+}
+
+#[cfg(test)]
+impl MockIo {
+    fn send(&mut self, bytes: Vec<u8>) -> HubResult<()> {
+        self.sent.push(bytes.clone());
+        if self
+            .fail_send
+            .as_ref()
+            .is_some_and(|prefix| bytes.starts_with(prefix))
+        {
+            self.fail_send = None;
+            return Err(HubError::Io("mock: write failed".into()));
+        }
+        if self
+            .exchanges
+            .front()
+            .is_some_and(|(prefix, _)| bytes.starts_with(prefix))
+        {
+            let (_, reply) = self.exchanges.pop_front().unwrap();
+            self.replies.push_back(reply);
+        }
+        Ok(())
+    }
 }
 
 #[allow(dead_code)]
@@ -74,6 +100,18 @@ impl Channel {
         }
     }
 
+    /// Queue a response only after its matching request is sent (idle reads
+    /// must not consume responses to commands that have not happened yet).
+    #[cfg(test)]
+    pub fn mock_exchange(&self, request: &[u8], reply: &[u8]) {
+        if let Inner::Mock(m) = &self.inner {
+            m.lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .exchanges
+                .push_back((request.to_vec(), reply.to_vec()));
+        }
+    }
+
     /// テスト用: send に来た全 body。
     #[cfg(test)]
     pub fn mock_sent(&self) -> Vec<Vec<u8>> {
@@ -88,6 +126,13 @@ impl Channel {
     pub fn mock_fail_send(&self, prefix: &[u8]) {
         if let Inner::Mock(m) = &self.inner {
             m.lock().unwrap_or_else(|p| p.into_inner()).fail_send = Some(prefix.to_vec());
+        }
+    }
+
+    #[cfg(test)]
+    pub fn mock_fail_recv(&self) {
+        if let Inner::Mock(m) = &self.inner {
+            m.lock().unwrap_or_else(|p| p.into_inner()).fail_recv = true;
         }
     }
 
@@ -106,19 +151,10 @@ impl Channel {
                 Ok(())
             }
             #[cfg(test)]
-            Inner::Mock(m) => {
-                let mut io = m.lock().unwrap_or_else(|p| p.into_inner());
-                io.sent.push(body.to_vec());
-                if io
-                    .fail_send
-                    .as_ref()
-                    .is_some_and(|prefix| body.starts_with(prefix))
-                {
-                    io.fail_send = None;
-                    return Err(HubError::Io("mock: write failed".into()));
-                }
-                Ok(())
-            }
+            Inner::Mock(m) => m
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .send(body.to_vec()),
         }
     }
 
@@ -141,8 +177,7 @@ impl Channel {
             Inner::Mock(m) => {
                 let mut f = vec![rid];
                 f.extend_from_slice(body);
-                m.lock().unwrap_or_else(|p| p.into_inner()).sent.push(f);
-                Ok(())
+                m.lock().unwrap_or_else(|p| p.into_inner()).send(f)
             }
         }
     }
@@ -165,12 +200,15 @@ impl Channel {
                 Ok(buf[..n].to_vec())
             }
             #[cfg(test)]
-            Inner::Mock(m) => m
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .replies
-                .pop_front()
-                .ok_or_else(|| HubError::Protocol("mock: no reply".into())),
+            Inner::Mock(m) => {
+                let mut io = m.lock().unwrap_or_else(|p| p.into_inner());
+                if std::mem::take(&mut io.fail_recv) {
+                    return Err(HubError::Io("mock: read failed".into()));
+                }
+                io.replies
+                    .pop_front()
+                    .ok_or_else(|| HubError::Protocol("mock: no reply".into()))
+            }
         }
     }
 
